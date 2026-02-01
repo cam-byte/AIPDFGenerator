@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>AI PDF Generator</title>
+	<link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+	<!-- Vendor CSS -->
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+	<!-- App CSS -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+
+	<!-- Vendor JS (no defer — must be available before local scripts) -->
+	<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/legacy/build/pdf.min.js"
+		crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+	<!-- App JS (defer = execute after DOM parse, in source order) -->
+	<script defer src="{{ url_for('static', filename='js/config.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/utilities.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/logo-preview.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/pdf-upload.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/settings.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/locations.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/progress-timer.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/form-submit.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/json-background.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/init.js') }}"></script>
+</head>
+
+<body>
+	<!-- JSON typing background (behind content) -->
+	<div class="json-bg" aria-hidden="true">
+		<div class="json-col json-col-left">
+			<pre class="json-pre"><code id="jsonLeft"></code><span class="json-caret"></span></pre>
+		</div>
+	</div>
+	<div class="container">
+		<div class="title-container">
+			<img src="{{ url_for('static', filename='AIPDFGeneratorLogo.png') }}" alt="Logo"
+				style="height:60px; vertical-align:middle; margin-right:20px;">
+			<div class="text">
+				<h1>AI PDF Generator</h1>
+				<p class="subtitle">Drop a PDF form, enter your business info, get a fillable PDF back.</p>
+			</div>
+		</div>
+
+		<!-- Settings (collapsible) -->
+		<div class="section">
+			<div class="section-header" id="settingsHeader" onclick="toggleSettings()">
+				<div style="display:flex; align-items:center; gap:10px;">
+					<i class="fa-solid fa-gear"></i>
+					<div class="section-title">Settings</div>
+					<span class="settings-badge" id="settingsBadge">...</span>
+				</div>
+				<span class="section-toggle"><i class="fas fa-chevron-down"></i></span>
+			</div>
+			<div class="section-body" id="settingsBody">
+				<div class="section-body-inner">
+					<div class="input-row">
+						<div>
+							<label for="provider">Provider</label>
+							<select id="provider">
+								<option value="anthropic">Anthropic (Claude)</option>
+								<option value="openai" disabled>OpenAI (coming soon)</option>
+							</select>
+						</div>
+						<div>
+							<label for="model">Model</label>
+							<input type="text" id="model" placeholder="claude-sonnet-4-20250514">
+						</div>
+					</div>
+
+					<label for="api_key">API Key</label>
+					<input type="password" id="api_key" placeholder="sk-ant-...">
+
+					<div style="display:flex; align-items:center;">
+						<button type="button" class="btn-sm" onclick="saveSettings()">Save Settings</button>
+						<span class="settings-feedback" id="settingsFeedback"></span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<form id="mainForm" method="POST" action="/process" enctype="multipart/form-data">
+			<!-- Business Info -->
+			<div class="section">
+				<div style="display:flex; gap:10px;">
+					<i class="fa-solid fa-briefcase"></i>
+					<div class="section-title">Business Info</div>
+				</div>
+
+				<label for="business_name">Business Name</label>
+				<input type="text" id="business_name" name="business_name" placeholder="Acme Dental">
+
+				<label for="logo">Logo (optional)</label>
+				<input type="file" id="logo" name="logo" accept="image/png,image/jpeg">
+				<div id="logoPreviewWrap" style="margin-top:12px; display:none;">
+					<label style="margin-bottom:8px;">Logo Preview</label>
+					<div style="display:flex; align-items:center; gap:12px;">
+						<div
+							style="width:72px; height:72px; border:1px solid #2a2d3a; border-radius:10px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#12141c;">
+							<img id="logoPreviewImg" alt="Selected logo preview"
+								style="max-width:100%; max-height:100%; display:block;">
+						</div>
+						<div style="color:#888; font-size:0.85rem;">
+							<div id="logoPreviewName" style="color:#e0e0e0; font-weight:600;"></div>
+							<div id="logoPreviewMeta"></div>
+							<button type="button" class="btn-sm" id="clearLogoBtn"
+								style="margin-top:15px;">Clear</button>
+						</div>
+					</div>
+				</div>
+
+			</div>
+
+			<!-- Locations (separate island) -->
+			<div class="section">
+				<div style="display:flex; gap:10px; align-items:center;">
+					<div style="display:flex; gap:10px;">
+						<i class="fa-solid fa-location-dot"></i>
+						<div class="section-title">Locations</div>
+					</div>
+				</div>
+
+				<div class="location-labels">
+					<label>Street Address</label>
+					<label>City, State Zip</label>
+					<label>Phone</label>
+					<label></label>
+				</div>
+
+				<div id="locations">
+					<div class="location-row">
+						<input type="text" placeholder="123 Main St" data-field="street">
+						<input type="text" placeholder="Austin, TX 78701" data-field="city_state_zip">
+						<input type="text" placeholder="(512) 555-0100" data-field="phone">
+						<button type="button" class="btn-remove" onclick="removeLocation(this)" title="Remove">
+							<i class="fa-solid fa-xmark"></i>
+						</button>
+					</div>
+				</div>
+
+				<button type="button" class="btn-add" onclick="addLocation()">+ Add Location</button>
+			</div>
+
+			<!-- PDF Upload -->
+			<div class="section">
+				<div style="display:flex; gap:10px;">
+					<i class="fa-solid fa-file-pdf"></i>
+					<div class="section-title">PDF Upload</div>
+				</div>
+
+				<div class="dropzone" id="dropzone">
+					<!-- NOTE: multiple -->
+					<input type="file" id="pdfInput" name="pdf" accept=".pdf" multiple>
+					<div class="dropzone-icon"><i class="fa-solid fa-file-pdf"></i></div>
+					<div class="dropzone-text">Drag & drop PDFs here, or click to browse</div>
+					<div class="dropzone-count" id="pdfCount"></div>
+				</div>
+
+				<!-- Multi preview -->
+				<div id="pdfPreviewWrap" style="margin-top:14px; display:none;">
+					<div
+						style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px;">
+						<label style="margin-bottom:0;">PDF Preview (page 1)</label>
+
+						<div style="display:flex; gap:10px; align-items:center;">
+							<button type="button" class="btn-sm" id="clearAllPdfsBtn">
+								Remove all
+							</button>
+						</div>
+					</div>
+
+					<div id="pdfPreviewErr" style="margin-top:10px; color:#f87171; font-size:0.85rem; display:none;">
+					</div>
+
+					<!-- Holds 1 or many preview cards -->
+					<div id="pdfPreviewList" class="pdf-preview-list"></div>
+				</div>
+			</div>
+
+
+			<!-- Submit -->
+			<input type="hidden" id="locationsField" name="locations" value="[]">
+			<button type="submit" class="btn-submit" id="submitBtn">
+				<span class="btn-text">Process PDF</span>
+			</button>
+		</form>
+
+		<!-- Result -->
+		<div class="result" id="result">
+			<div class="result-message" id="resultMessage"></div>
+		</div>
+	</div>
+
+</body>
+
+</html>
