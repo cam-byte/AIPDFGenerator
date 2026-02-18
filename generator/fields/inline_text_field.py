@@ -42,7 +42,7 @@ class InlineTextField:
             return
 
         # Set font for text
-        font_name = 'Helvetica'
+        font_name = self.generator.font_family
         font_size = 10
         c.setFont(font_name, font_size)
         c.setFillColor(self.colors['primary'])

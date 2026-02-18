@@ -4,3 +4,4 @@ pdf2image>=1.16.3
 Pillow>=10.0.0
 reportlab>=4.4.0
 flask>=3.0.0
+flaskwebgui>=1.0.0

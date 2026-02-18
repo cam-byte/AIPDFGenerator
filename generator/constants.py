@@ -10,7 +10,7 @@ MARGINS = {
 # Normal field dimensions
 FIELD_DIMENSIONS = {
     'width': 510,
-    'height': 18  # Slightly smaller but readable
+    'height': 15  # Compact default (~15% smaller than original 18)
 }
 
 COLORS = {

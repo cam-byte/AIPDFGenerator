@@ -18,6 +18,7 @@ from flask import Flask, render_template, request, send_file, jsonify
 
 from analyzer.form_analyzer import FormAnalyzer
 from generator.pdf_generator import generate_form_pdf
+from flaskwebgui import FlaskUI
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB upload limit
@@ -78,6 +79,30 @@ def mask_key(key):
 
 
 # ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _extract_city(city_state_zip):
+    """Extract a slug from a city/state/zip string.
+
+    'Austin, TX 78701' -> 'austin'
+    'New York, NY 10001' -> 'new_york'
+    """
+    text = (city_state_zip or '').strip()
+    if ',' in text:
+        city = text.split(',')[0].strip()
+    else:
+        city = text.split()[0] if text else 'unknown'
+    return city.lower().replace(' ', '_')
+
+
+def _write_html(output_path, form_key):
+    """Write an HTML file containing the autofill template tag."""
+    with open(output_path, 'w') as f:
+        f.write('{{!/autofills/forms/form_fields/' + form_key + '->content->' + form_key + '}}')
+
+
+# ---------------------------------------------------------------------------
 # Process-PDF helpers
 # ---------------------------------------------------------------------------
 
@@ -117,11 +142,20 @@ def _build_business_info(req, logo_path):
     except json.JSONDecodeError:
         pass
 
+    separate_locations = req.form.get('separate_locations', '0') == '1'
+
+    try:
+        pdf_options = json.loads(req.form.get('pdf_options', '{}'))
+    except (json.JSONDecodeError, TypeError):
+        pdf_options = {}
+
     first_loc = locations[0] if locations else {}
     return {
         'logo_path': logo_path,
         'business_name': business_name,
         'locations': locations,
+        'separate_locations': separate_locations,
+        'pdf_options': pdf_options,
         'address': f"{first_loc.get('street', '')} {first_loc.get('city_state_zip', '')}".strip(),
         'phone': first_loc.get('phone', ''),
         'email': '',
@@ -209,6 +243,9 @@ def process_pdf():
         # Collect all generated files across PDFs
         all_output_files = []  # list of (arcname, filepath)
 
+        separate = business_info.get('separate_locations', False)
+        locations = business_info.get('locations', [])
+
         for pdf_path in pdf_paths:
             filename = os.path.basename(pdf_path)
             form_details, form_data = _detect_and_analyze(
@@ -219,15 +256,45 @@ def process_pdf():
             form_key = form_name.lower().replace(' ', '_').replace('-', '_')
             form_key = ''.join(c for c in form_key if c.isalnum() or c == '_')
 
-            json_path = os.path.join(tmpdir, f'{form_key}.json')
-            with open(json_path, 'w') as f:
-                json.dump(form_data, indent=2, fp=f)
+            if separate and len(locations) >= 2:
+                # Generate a separate set of files per location
+                for loc in locations:
+                    city = _extract_city(loc.get('city_state_zip', ''))
+                    loc_key = f'{form_key}_{city}'
 
-            pdf_output = os.path.join(tmpdir, f'{form_key}_fillable.pdf')
-            generate_form_pdf(json_path, pdf_output, business_info=business_info)
+                    loc_info = dict(business_info)
+                    loc_info['locations'] = [loc]
+                    loc_info['address'] = f"{loc.get('street', '')} {loc.get('city_state_zip', '')}".strip()
+                    loc_info['phone'] = loc.get('phone', '')
 
-            all_output_files.append((f'{form_key}.json', json_path))
-            all_output_files.append((f'{form_key}_fillable.pdf', pdf_output))
+                    json_path = os.path.join(tmpdir, f'{loc_key}.json')
+                    with open(json_path, 'w') as f:
+                        json.dump(form_data, indent=2, fp=f)
+
+                    pdf_output = os.path.join(tmpdir, f'{loc_key}_fillable.pdf')
+                    generate_form_pdf(json_path, pdf_output, business_info=loc_info)
+
+                    html_path = os.path.join(tmpdir, f'{loc_key}.html')
+                    _write_html(html_path, loc_key)
+
+                    all_output_files.append((f'json/{loc_key}.json', json_path))
+                    all_output_files.append((f'html/{loc_key}.html', html_path))
+                    all_output_files.append((f'pdf/{loc_key}_fillable.pdf', pdf_output))
+            else:
+                # Normal mode: single set of files
+                json_path = os.path.join(tmpdir, f'{form_key}.json')
+                with open(json_path, 'w') as f:
+                    json.dump(form_data, indent=2, fp=f)
+
+                pdf_output = os.path.join(tmpdir, f'{form_key}_fillable.pdf')
+                generate_form_pdf(json_path, pdf_output, business_info=business_info)
+
+                html_path = os.path.join(tmpdir, f'{form_key}.html')
+                _write_html(html_path, form_key)
+
+                all_output_files.append((f'json/{form_key}.json', json_path))
+                all_output_files.append((f'html/{form_key}.html', html_path))
+                all_output_files.append((f'pdf/{form_key}_fillable.pdf', pdf_output))
 
         # Build single zip with all results
         zip_buffer = io.BytesIO()
@@ -256,5 +323,104 @@ def process_pdf():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@app.route('/regenerate', methods=['POST'])
+def regenerate_pdf():
+    """Regenerate fillable PDFs from previously-exported JSON definitions."""
+    tmpdir = tempfile.mkdtemp()
+
+    try:
+        json_files = request.files.getlist('json')
+        json_files = [f for f in json_files if f and f.filename]
+
+        if not json_files:
+            return jsonify({'error': 'No JSON file uploaded'}), 400
+
+        # Save logo if provided
+        logo_path = None
+        logo_file = request.files.get('logo')
+        if logo_file and logo_file.filename:
+            logo_path = os.path.join(tmpdir, logo_file.filename)
+            logo_file.save(logo_path)
+
+        business_info = _build_business_info(request, logo_path)
+
+        pdf_outputs = []
+        separate = business_info.get('separate_locations', False)
+        locations = business_info.get('locations', [])
+
+        for json_file in json_files:
+            if not json_file.filename.lower().endswith('.json'):
+                raise ValueError(f'File must be JSON: {json_file.filename}')
+
+            json_path = os.path.join(tmpdir, json_file.filename)
+            json_file.save(json_path)
+
+            # Load the JSON to extract form_key
+            with open(json_path, 'r') as f:
+                form_data = json.load(f)
+
+            # The top-level key is the form_key
+            form_key = list(form_data.keys())[0]
+
+            if separate and len(locations) >= 2:
+                for loc in locations:
+                    city = _extract_city(loc.get('city_state_zip', ''))
+                    loc_key = f'{form_key}_{city}'
+
+                    loc_info = dict(business_info)
+                    loc_info['locations'] = [loc]
+                    loc_info['address'] = f"{loc.get('street', '')} {loc.get('city_state_zip', '')}".strip()
+                    loc_info['phone'] = loc.get('phone', '')
+
+                    pdf_output = os.path.join(tmpdir, f'{loc_key}_fillable.pdf')
+                    generate_form_pdf(json_path, pdf_output, business_info=loc_info)
+                    pdf_outputs.append(pdf_output)
+            else:
+                pdf_output = os.path.join(tmpdir, f'{form_key}_fillable.pdf')
+                generate_form_pdf(json_path, pdf_output, business_info=business_info)
+                pdf_outputs.append(pdf_output)
+
+        # Single PDF: return it directly. Multiple: zip them flat.
+        if len(pdf_outputs) == 1:
+            return send_file(
+                pdf_outputs[0],
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=os.path.basename(pdf_outputs[0]),
+            )
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for pdf_path in pdf_outputs:
+                zf.write(pdf_path, os.path.basename(pdf_path))
+        zip_buffer.seek(0)
+
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='regenerated.zip',
+        )
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # app.run(debug=True, port=5000)
+    FlaskUI(
+        app=app,
+        server="flask",
+        width=1200,
+        height=900,
+        browser_path="/Applications/Chromium.app/Contents/MacOS/Chromium",
+        extra_flags=["--password-store=basic", "--use-mock-keychain"],
+        auto_close=True,
+    ).run()

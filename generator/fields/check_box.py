@@ -6,7 +6,7 @@
 from ..utils import _strip_html_tags, wrap_text, create_acrobat_compatible_field, _check_page_break
 
 # ===== CheckBox visual tuning (points) =====
-CHECKBOX_BOX_SIZE = 12          # square size
+CHECKBOX_BOX_SIZE = 11          # square size
 CHECKBOX_GAP = 6                # gap between square and text
 CHECKBOX_LINE_GAP = 1           # tighter extra spacing between wrapped lines (was 3)
 CHECKBOX_VPAD = 0               # vertical breathing room inside a row (was 2 / your -0)
@@ -193,7 +193,7 @@ class CheckBox:
         font_size = style.font_size
         color = style.color
 
-        checkbox_size = CHECKBOX_BOX_SIZE
+        checkbox_size = self.generator.checkbox_size
         gap = CHECKBOX_GAP
         v_pad = CHECKBOX_VPAD
         line_gap = CHECKBOX_LINE_GAP
@@ -323,7 +323,7 @@ class CheckBox:
         total_width_needed = 0
         for _, option_label in options_list:
             clean_label = _strip_html_tags(option_label)
-            label_width = stringWidth(clean_label, "Helvetica", 9)
+            label_width = stringWidth(clean_label, self.generator.font_family, self.generator.check_radio_label_size)
             item_width = checkbox_size + padding + label_width + 8
             total_width_needed += item_width
 
@@ -354,10 +354,12 @@ class CheckBox:
         v_pad = CHECKBOX_VPAD
         baseline_nudge = CHECKBOX_BASELINE_NUDGE
 
+        check_label_size = self.generator.check_radio_label_size
+
         if in_multi_col:
             # Column-constrained vertical list with centered rows (compact)
             usable_text_w = max(0, field_width - (checkbox_size + gap))
-            c.setFont("Helvetica", 9)
+            c.setFont(self.generator.font_family, check_label_size)
             c.setFillColor(self.colors['primary'])
 
             # Compact: ignore any tall group_row_height for multi-option lines
@@ -369,9 +371,9 @@ class CheckBox:
             for value_key, option_label in options_list:
                 clean_label = _strip_html_tags(option_label)
 
-                lines, _ = wrap_text(c, clean_label, usable_text_w, "Helvetica", 9)
-                line_height = 9 + line_gap
-                text_block_h = max(9, len(lines) * line_height)
+                lines, _ = wrap_text(c, clean_label, usable_text_w, self.generator.font_family, check_label_size)
+                line_height = check_label_size + line_gap
+                text_block_h = max(check_label_size, len(lines) * line_height)
 
                 content_row_h = max(checkbox_size, text_block_h) + v_pad
                 row_h = max(content_row_h, enforced_min)
@@ -383,7 +385,7 @@ class CheckBox:
                     else:
                         _check_page_break(self.generator, c, row_h + 20)
                         self.generator.page_manager.initialize_page(c)
-                    c.setFont("Helvetica", 9)
+                    c.setFont(self.generator.font_family, check_label_size)
                     c.setFillColor(self.colors['primary'])
                     y_top = self.generator.current_y
                     y_cursor = y_top
@@ -429,13 +431,15 @@ class CheckBox:
             return
 
         # --------- non-group behavior (horizontal packing) ----------
+        checkbox_size = self.generator.checkbox_size
+        gap = CHECKBOX_GAP
         label_to_checkbox_gap = -8   # slightly less negative to tighten
         self.generator.current_y -= label_to_checkbox_gap
 
-        c.setFont("Helvetica", 9)
+        c.setFont(self.generator.font_family, check_label_size)
         c.setFillColor(self.colors['primary'])
 
-        row_height = checkbox_size + 6  # tighter
+        row_height = checkbox_size + 4  # tighter
         available_width = field_width
         start_x = field_x
 
@@ -443,7 +447,7 @@ class CheckBox:
         item_widths = []
         for _, option_label in options_list:
             clean_label = _strip_html_tags(option_label)
-            label_width = stringWidth(clean_label, "Helvetica", 9)
+            label_width = stringWidth(clean_label, self.generator.font_family, check_label_size)
             item_width = checkbox_size + gap + label_width + 12
             item_widths.append(item_width)
 
@@ -468,7 +472,7 @@ class CheckBox:
                     current_x = start_x
                     items_in_current_row = 0
                     current_row_width = 0
-                    c.setFont("Helvetica", 9)
+                    c.setFont(self.generator.font_family, check_label_size)
                     c.setFillColor(self.colors['primary'])
 
             normalized_value = self._normalize_field_value(value_key)

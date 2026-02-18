@@ -45,7 +45,7 @@ class TextField:
                 field_label_style.font_name, field_label_style.font_size,
                 field_label_style.color
             )
-            field_y = final_label_y + 12
+            field_y = final_label_y + self.generator.label_gap + 9
 
         # Draw text field
         field_y_position = field_y - 5
@@ -56,7 +56,7 @@ class TextField:
             y=field_y_position - self.field_height,
             width=field_width,
             height=self.field_height,
-            fontSize=10,
+            fontSize=self.generator.input_font_size,
             fieldFlags=0
         )
 
@@ -68,7 +68,7 @@ class TextField:
             group_field = GroupField(self.generator, c)
             group_field.add_field_to_group(field_name, final_field_y, starting_y, field_x, field_width)
         else:
-            self.generator.current_y = final_field_y - 20
+            self.generator.current_y = final_field_y - self.generator.field_spacing
 
         # Restore canvas state
         c.setFont(current_font, current_size)

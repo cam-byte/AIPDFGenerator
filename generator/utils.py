@@ -13,16 +13,19 @@ def _strip_html_tags(text):
     clean = re.compile('<.*?>')
     return re.sub(clean, '', text)
 
+def _sanitize_option(text):
+    """Make option text PDF-safe by replacing characters that break PDF form fields."""
+    return str(text).replace('/', '-')
+
 def _get_options(option_data):
-    """Extract options from various formats"""
+    """Extract options from various formats. Value = label, both PDF-safe."""
     if not option_data:
         return []
 
     if isinstance(option_data, dict):
-        # Swap so value becomes the display text
-        return [(value, value) for key, value in option_data.items()]
+        return [(_sanitize_option(value), _sanitize_option(value)) for key, value in option_data.items()]
     elif isinstance(option_data, list):
-        return [(str(i), str(item)) for i, item in enumerate(option_data)]
+        return [(_sanitize_option(item), _sanitize_option(item)) for item in option_data]
     else:
         return []
 
@@ -35,7 +38,8 @@ def _check_page_break(generator, canvas, needed_height):
         return True
     return False
 
-def _calculate_field_height(field_type, label, options, field_width, field_height, label_styles):
+def _calculate_field_height(field_type, label, options, field_width, field_height, label_styles,
+                            textarea_height=42, field_spacing=17, checkbox_size=9, radio_size=9):
     """Enhanced field height calculation"""
     if field_type in ('group_start', 'group_end'):
         return 0
@@ -43,18 +47,17 @@ def _calculate_field_height(field_type, label, options, field_width, field_heigh
         # For checkboxes with long text, we need to account for wrapping
         if isinstance(options, dict) and 'checked' in options:
             text = options['checked']
-            if text and len(text) > 50:  # Long text needs more height
-                # Rough calculation for wrapped text
-                char_width = 6  # Approximate character width
+            if text and len(text) > 50:
+                char_width = 6
                 chars_per_line = max(field_width // char_width, 20)
                 lines = len(text) // chars_per_line + 1
-                return max(30, lines * 15)  # Minimum 30, or calculated height
-        return 25
+                return max(30, lines * 15)
+        return checkbox_size + 14
     elif field_type == 'textarea':
-        return 80
+        return textarea_height + 30
     elif field_type in ['radio']:
         option_count = len(_get_options(options)) if options else 2
-        return 20 + (option_count * 18)
+        return 20 + (option_count * (radio_size + 7))
     elif field_type == 'label':
         if '<h1>' in str(label).lower():
             return 30
@@ -63,10 +66,10 @@ def _calculate_field_height(field_type, label, options, field_width, field_heigh
         elif '<h4>' in str(label).lower():
             return 20
         elif '<p>' in str(label).lower():
-            return 40  # Paragraphs need more space
+            return 40
         return 15
     elif field_type in ('text', 'email', 'date', 'select'):
-        return field_height + 45
+        return field_height + field_spacing + 25
     else:
         return field_height
 

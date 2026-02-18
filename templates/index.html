@@ -23,6 +23,8 @@
 	<script defer src="{{ url_for('static', filename='js/settings.js') }}"></script>
 	<script defer src="{{ url_for('static', filename='js/locations.js') }}"></script>
 	<script defer src="{{ url_for('static', filename='js/progress-timer.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/mode-toggle.js') }}"></script>
+	<script defer src="{{ url_for('static', filename='js/pdf-options.js') }}"></script>
 	<script defer src="{{ url_for('static', filename='js/form-submit.js') }}"></script>
 	<script defer src="{{ url_for('static', filename='js/json-background.js') }}"></script>
 	<script defer src="{{ url_for('static', filename='js/init.js') }}"></script>
@@ -46,7 +48,7 @@
 		</div>
 
 		<!-- Settings (collapsible) -->
-		<div class="section">
+		<div class="section" id="settingsSection">
 			<div class="section-header" id="settingsHeader" onclick="toggleSettings()">
 				<div style="display:flex; align-items:center; gap:10px;">
 					<i class="fa-solid fa-gear"></i>
@@ -83,6 +85,18 @@
 		</div>
 
 		<form id="mainForm" method="POST" action="/process" enctype="multipart/form-data">
+			<!-- Mode Selector -->
+			<div class="section">
+				<div style="display:flex; gap:10px;">
+					<i class="fa-solid fa-sliders"></i>
+					<div class="section-title">Mode</div>
+				</div>
+				<select id="modeSelect">
+					<option value="upload">Upload PDF (AI Analysis)</option>
+					<option value="regenerate">Regenerate PDF from JSON</option>
+				</select>
+			</div>
+
 			<!-- Business Info -->
 			<div class="section">
 				<div style="display:flex; gap:10px;">
@@ -142,10 +156,491 @@
 				</div>
 
 				<button type="button" class="btn-add" onclick="addLocation()">+ Add Location</button>
+
+				<div style="margin-top:12px; display:flex; align-items:center; gap:8px;">
+					<input type="checkbox" id="separate_locations" style="width:auto;">
+					<label for="separate_locations" style="margin:0; cursor:pointer;">Generate separate form for each location</label>
+				</div>
+			</div>
+
+			<!-- PDF Options (collapsible) -->
+			<div class="section" id="pdfOptionsSection">
+				<div class="section-header" id="pdfOptionsHeader" onclick="togglePdfOptions()">
+					<div style="display:flex; align-items:center; gap:10px;">
+						<i class="fa-solid fa-sliders"></i>
+						<div class="section-title">PDF Options</div>
+					</div>
+					<span class="section-toggle"><i class="fas fa-chevron-down"></i></span>
+				</div>
+				<div class="section-body" id="pdfOptionsBody">
+					<div class="section-body-inner">
+
+						<!-- Preset buttons -->
+						<div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+							<button type="button" class="btn-sm preset-btn" data-preset="very_tight" onclick="applyPdfPreset('very_tight')">Very Tight</button>
+							<button type="button" class="btn-sm preset-btn" data-preset="tight" onclick="applyPdfPreset('tight')">Tight</button>
+							<button type="button" class="btn-sm preset-btn" data-preset="normal" onclick="applyPdfPreset('normal')">Normal</button>
+							<button type="button" class="btn-sm preset-btn" data-preset="spacious" onclick="applyPdfPreset('spacious')">Spacious</button>
+						</div>
+
+						<!-- 2-column: controls left, preview right -->
+						<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+							<!-- Controls -->
+							<div>
+								<!-- Font Family -->
+								<div style="margin-bottom:12px; font-weight:600; font-size:0.85rem; color:#ccc;">Font</div>
+								<select id="pdf_font_family" onchange="updatePdfPreview()" style="margin-bottom:14px; width:100%;">
+									<option value="Helvetica" selected>Helvetica (sans-serif)</option>
+									<option value="Times">Times (serif)</option>
+									<option value="Courier">Courier (monospace)</option>
+								</select>
+
+								<!-- Text Sizes -->
+								<div style="margin-bottom:12px; font-weight:600; font-size:0.85rem; color:#ccc;">Text Sizes</div>
+
+								<label style="font-size:0.8rem;">H1 Title: <span id="pdf_h1_size_val">13.5</span>pt</label>
+								<input type="range" id="pdf_h1_size" min="8" max="20" step="0.5" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">H3 Section: <span id="pdf_h3_size_val">10</span>pt</label>
+								<input type="range" id="pdf_h3_size" min="6" max="16" step="0.5" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">H4 Subsection: <span id="pdf_h4_size_val">8.5</span>pt</label>
+								<input type="range" id="pdf_h4_size" min="5" max="12" step="0.5" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Body Text: <span id="pdf_p_size_val">7.5</span>pt</label>
+								<input type="range" id="pdf_p_size" min="5" max="11" step="0.5" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Field Labels: <span id="pdf_field_label_size_val">7.5</span>pt</label>
+								<input type="range" id="pdf_field_label_size" min="5" max="11" step="0.5" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Check/Radio Labels: <span id="pdf_check_radio_label_size_val">7.5</span>pt</label>
+								<input type="range" id="pdf_check_radio_label_size" min="4" max="11" step="0.5" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<!-- Field Sizes -->
+								<div style="margin-top:14px; margin-bottom:12px; font-weight:600; font-size:0.85rem; color:#ccc;">Field Sizes</div>
+
+								<label style="font-size:0.8rem;">Input Height: <span id="pdf_input_height_val">15</span>px</label>
+								<input type="range" id="pdf_input_height" min="10" max="24" step="1" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Textarea Height: <span id="pdf_textarea_height_val">42</span>px</label>
+								<input type="range" id="pdf_textarea_height" min="25" max="65" step="1" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Check/Radio Size: <span id="pdf_checkbox_size_val">9</span>px</label>
+								<input type="range" id="pdf_checkbox_size" min="6" max="14" step="1" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<!-- Spacing -->
+								<div style="margin-top:14px; margin-bottom:12px; font-weight:600; font-size:0.85rem; color:#ccc;">Spacing</div>
+
+								<label style="font-size:0.8rem;">Field Gap: <span id="pdf_field_spacing_val">17</span>px</label>
+								<input type="range" id="pdf_field_spacing" min="6" max="30" step="1" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Label Gap: <span id="pdf_label_gap_val">3</span>px</label>
+								<input type="range" id="pdf_label_gap" min="0" max="8" step="1" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<!-- Column & Header -->
+								<div style="margin-top:14px; margin-bottom:12px; font-weight:600; font-size:0.85rem; color:#ccc;">Columns &amp; Header</div>
+
+								<label style="font-size:0.8rem;">Column Gap: <span id="pdf_col_spacing_val">17</span>px</label>
+								<input type="range" id="pdf_col_spacing" min="6" max="30" step="1" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Group Row Height: <span id="pdf_group_row_height_val">22</span>px</label>
+								<input type="range" id="pdf_group_row_height" min="10" max="36" step="1" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Group Row Gap: <span id="pdf_group_row_gap_val">10</span>px</label>
+								<input type="range" id="pdf_group_row_gap" min="2" max="20" step="1" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+
+								<label style="font-size:0.8rem;">Header Font: <span id="pdf_header_font_size_val">8</span>pt</label>
+								<input type="range" id="pdf_header_font_size" min="6" max="11" step="0.5" style="width:100%; accent-color:#6366f1;" oninput="updatePdfPreview()">
+							</div>
+
+							<!-- Preview panel (multi-page) -->
+							<div id="pdfPreviewPanel">
+
+								<!-- PAGE 1 -->
+								<div class="pdf-page">
+									<!-- Header -->
+									<div class="prev-header">
+										<div class="prev-logo-box">LOGO</div>
+										<div class="prev-header-text">
+											123 Main St<br>Austin, TX 78701<br>(512) 555-0100
+										</div>
+									</div>
+									<hr class="prev-divider">
+
+									<!-- Title -->
+									<div class="prev-h1" style="font-weight:bold; text-align:center; margin-bottom:6px;">Patient Registration Form</div>
+
+									<!-- Section -->
+									<div class="prev-h3" style="font-weight:bold; margin-bottom:4px;">Patient Information</div>
+
+									<!-- 2-col auto-flow -->
+									<div class="prev-row-2col prev-field">
+										<div>
+											<div class="prev-label" style="color:#555;">Last Name</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+										<div>
+											<div class="prev-label" style="color:#555;">First Name</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+									</div>
+
+									<div class="prev-h4" style="font-weight:bold; margin-bottom:3px;">Demographics</div>
+									<div class="prev-p" style="color:#333; margin-bottom:6px;">Please provide accurate information so we can better serve you. All fields are required unless marked optional.</div>
+
+									<!-- Full-width field -->
+									<div class="prev-field">
+										<div class="prev-label" style="color:#555;">Email Address</div>
+										<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+									</div>
+
+									<!-- Radio -->
+									<div class="prev-field">
+										<div class="prev-label" style="color:#555;">Preferred Contact Method</div>
+										<div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Phone</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0; margin-left:6px;"></div>
+											<span class="prev-check-label" style="color:#333;">Email</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0; margin-left:6px;"></div>
+											<span class="prev-check-label" style="color:#333;">Text</span>
+										</div>
+									</div>
+
+									<!-- Checkbox with long text -->
+									<div class="prev-field" style="display:flex; align-items:flex-start; gap:5px;">
+										<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0; margin-top:1px;"></div>
+										<span class="prev-check-label" style="color:#555; margin-bottom:0;">I acknowledge that the information provided is accurate and I authorize this office to contact me regarding appointments and treatment.</span>
+									</div>
+								</div>
+
+								<!-- PAGE 2 -->
+								<div class="pdf-page">
+									<div class="prev-h3" style="font-weight:bold; margin-bottom:4px;">Address Information</div>
+
+									<!-- 4-col group -->
+									<div class="prev-row-4col prev-field">
+										<div>
+											<div class="prev-label" style="color:#555;">Street Address</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+										<div>
+											<div class="prev-label" style="color:#555;">City</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+										<div>
+											<div class="prev-label" style="color:#555;">State</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+										<div>
+											<div class="prev-label" style="color:#555;">Zip</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+									</div>
+
+									<div class="prev-h3" style="font-weight:bold; margin-bottom:4px;">Contact Details</div>
+
+									<!-- 3-col group -->
+									<div class="prev-row-3col prev-field">
+										<div>
+											<div class="prev-label" style="color:#555;">Email</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+										<div>
+											<div class="prev-label" style="color:#555;">Business Phone</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+										<div>
+											<div class="prev-label" style="color:#555;">Cell Phone</div>
+											<div class="prev-input" style="border:1px solid #999; border-radius:2px;"></div>
+										</div>
+									</div>
+
+									<div class="prev-h3" style="font-weight:bold; margin-bottom:4px;">Additional Information</div>
+
+									<!-- 2-col mixed: checkboxes left, radio right -->
+									<div class="prev-row-2col prev-field">
+										<div>
+											<div class="prev-label" style="color:#555;">Current Conditions</div>
+											<div style="display:flex; align-items:center; gap:5px; margin-bottom:3px;">
+												<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+												<span class="prev-check-label" style="color:#333;">Diabetes</span>
+											</div>
+											<div style="display:flex; align-items:center; gap:5px; margin-bottom:3px;">
+												<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+												<span class="prev-check-label" style="color:#333;">High Blood Pressure</span>
+											</div>
+											<div style="display:flex; align-items:center; gap:5px;">
+												<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+												<span class="prev-check-label" style="color:#333;">Heart Disease</span>
+											</div>
+										</div>
+										<div>
+											<div class="prev-label" style="color:#555;">Are you pregnant?</div>
+											<div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+												<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+												<span class="prev-check-label" style="color:#333;">Yes</span>
+												<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0; margin-left:6px;"></div>
+												<span class="prev-check-label" style="color:#333;">No</span>
+											</div>
+										</div>
+									</div>
+
+									<!-- Textarea -->
+									<div class="prev-field">
+										<div class="prev-label" style="color:#555;">Please describe any additional medical conditions or concerns</div>
+										<div class="prev-textarea" style="border:1px solid #999; border-radius:2px;"></div>
+									</div>
+								</div>
+
+								<!-- PAGE 3: 2-col yes/no radio group (12 items) -->
+								<div class="pdf-page">
+									<div class="prev-h3" style="font-weight:bold; margin-bottom:4px;">Medical History</div>
+									<div class="prev-p" style="color:#333; margin-bottom:6px;">Please indicate Yes or No for each of the following conditions.</div>
+
+									<div class="prev-row-2col prev-field" style="row-gap:4px;">
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Heart Disease</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Diabetes</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">High Blood Pressure</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Stroke</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Asthma</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Epilepsy</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Cancer</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Kidney Disease</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Liver Disease</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Thyroid Problems</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Arthritis</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:5px;">
+											<div class="prev-label" style="color:#555; margin-bottom:0; flex:1;">Depression</div>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">Yes</span>
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:50%; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">No</span>
+										</div>
+									</div>
+
+									<div class="prev-field">
+										<div class="prev-label" style="color:#555;">If yes to any of the above, please explain</div>
+										<div class="prev-textarea" style="border:1px solid #999; border-radius:2px;"></div>
+									</div>
+								</div>
+
+								<!-- PAGE 4: 4-col dental chart style (32 items) -->
+								<div class="pdf-page">
+									<div class="prev-h3" style="font-weight:bold; margin-bottom:4px;">Dental Chart — Existing Conditions</div>
+									<div class="prev-p" style="color:#333; margin-bottom:6px;">Check all that apply for each tooth number.</div>
+
+									<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px 12px;" class="prev-field">
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#1 Decay</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#2 Filling</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#3 Crown</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#4 Missing</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#5 Decay</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#6 Root Canal</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#7 Implant</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#8 Bridge</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#9 Decay</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#10 Filling</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#11 Crown</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#12 Missing</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#13 Decay</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#14 Root Canal</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#15 Implant</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#16 Bridge</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#17 Filling</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#18 Crown</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#19 Missing</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#20 Decay</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#21 Root Canal</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#22 Implant</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#23 Bridge</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#24 Filling</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#25 Crown</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#26 Missing</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#27 Decay</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#28 Root Canal</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#29 Implant</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#30 Bridge</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#31 Filling</span>
+										</div>
+										<div style="display:flex; align-items:center; gap:4px;">
+											<div class="prev-checkbox" style="border:1px solid #999; border-radius:2px; flex-shrink:0;"></div>
+											<span class="prev-check-label" style="color:#333;">#32 Crown</span>
+										</div>
+									</div>
+
+									<div class="prev-field">
+										<div class="prev-label" style="color:#555;">Additional notes</div>
+										<div class="prev-textarea" style="border:1px solid #999; border-radius:2px;"></div>
+									</div>
+								</div>
+
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 
 			<!-- PDF Upload -->
-			<div class="section">
+			<div class="section" id="pdfUploadSection">
 				<div style="display:flex; gap:10px;">
 					<i class="fa-solid fa-file-pdf"></i>
 					<div class="section-title">PDF Upload</div>
@@ -180,6 +675,29 @@
 				</div>
 			</div>
 
+
+			<!-- JSON Upload (hidden by default, shown in regenerate mode) -->
+			<div class="section" id="jsonUploadSection" style="display:none;">
+				<div style="display:flex; gap:10px;">
+					<i class="fa-solid fa-file-code"></i>
+					<div class="section-title">JSON Upload</div>
+				</div>
+
+				<div class="dropzone" id="jsonDropzone">
+					<input type="file" id="jsonInput" name="json" accept=".json" multiple>
+					<div class="dropzone-icon"><i class="fa-solid fa-file-code"></i></div>
+					<div class="dropzone-text">Drag & drop JSON files here, or click to browse</div>
+					<div class="dropzone-count" id="jsonCount"></div>
+				</div>
+
+				<div id="jsonPreviewWrap" style="margin-top:14px; display:none;">
+					<div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px;">
+						<label style="margin-bottom:0;">Selected JSON Files</label>
+						<button type="button" class="btn-sm" id="clearAllJsonBtn">Remove all</button>
+					</div>
+					<div id="jsonPreviewList" class="pdf-preview-list"></div>
+				</div>
+			</div>
 
 			<!-- Submit -->
 			<input type="hidden" id="locationsField" name="locations" value="[]">

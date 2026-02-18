@@ -35,7 +35,7 @@ class TextArea:
 
         # Position field
         field_y_position = field_y - 3
-        textarea_height = 50
+        textarea_height = self.generator.textarea_height
 
         # Draw text area
         create_acrobat_compatible_field(c, 'textfield',
@@ -45,7 +45,7 @@ class TextArea:
             y=field_y_position - textarea_height,
             width=field_width,
             height=textarea_height,
-            fontSize=10,
+            fontSize=self.generator.input_font_size,
             fieldFlags=4096  # Multi-line flag for textarea
         )
 
@@ -54,7 +54,7 @@ class TextArea:
         if self.generator.current_group is not None:
             self._handle_group_positioning(field_x, field_width, final_field_y, starting_y)
         else:
-            self.generator.current_y = final_field_y - 10
+            self.generator.current_y = final_field_y - self.generator.field_spacing * 0.5
 
         c.setFont(current_font, current_size)
         c.setFillColor(current_color)

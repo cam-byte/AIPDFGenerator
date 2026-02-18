@@ -33,7 +33,7 @@ class SelectField:
                 field_label_style.color
             )
 
-            field_y = final_label_y + 12
+            field_y = final_label_y + self.generator.label_gap + 9
 
         # Set minimum field width to prevent ReportLab issues
         min_width = 100
@@ -56,19 +56,9 @@ class SelectField:
             y=field_y_position - self.field_height,
             width=field_width,
             height=self.field_height,
-            fontSize=10,
+            fontSize=self.generator.input_font_size,
             fieldFlags=0
         )
-
-        # Draw options reference for short lists
-        if options_list and len(options_list) <= 3:
-            c.setFont("Helvetica", 8)
-            c.setFillColor(self.colors['secondary'])
-            options_text = " / ".join([ol for v, ol in options_list])
-            # Make sure options text doesn't extend beyond available space
-            max_options_width = (self.generator.field_width - field_width - 20)
-            if max_options_width > 50:  # Only show if there's reasonable space
-                c.drawString(field_x + field_width + 10, field_y_position - 8, f"({options_text})")
 
         final_field_y = field_y_position - self.field_height
 
@@ -76,8 +66,16 @@ class SelectField:
             from .group_field import GroupField
             group_field = GroupField(self.generator, c)
             group_field.add_field_to_group(field_name, final_field_y, starting_y, field_x, field_width)
+
+            # After row completion, apply proper spacing (matching text field gap)
+            idx = len(self.generator.group_fields)
+            if idx % self.generator.group_columns == 0:
+                row_start = idx - self.generator.group_columns
+                row_fields = self.generator.group_fields[row_start:]
+                min_y = min(f.get('y', self.generator.current_y) for f in row_fields)
+                self.generator.current_y = min_y - 15
         else:
-            self.generator.current_y = final_field_y - 20
+            self.generator.current_y = final_field_y - self.generator.field_spacing
 
         c.setFont(current_font, current_size)
         c.setFillColor(current_color)

@@ -55,14 +55,14 @@ class RadioButton:
             group_field = GroupField(self.generator, c)
             group_field.add_field_to_group(field_name, final_y, starting_y, field_x, field_width)
         else:
-            self.generator.current_y = final_y - 20
+            self.generator.current_y = final_y - self.generator.field_spacing * 0.65
 
         c.setFont(current_font, current_size)
         c.setFillColor(current_color)
 
     def _draw_radio_buttons_clean(self, c, field_name, options_list, field_x, field_y, field_width):
         """Draw radio buttons with clean positioning - ALWAYS HORIZONTAL"""
-        c.setFont("Helvetica", 9)
+        c.setFont(self.generator.font_family, self.generator.check_radio_label_size)
         c.setFillColor(self.colors['primary'])
 
         return self._draw_horizontal_radio_buttons(c, field_name, options_list, field_x, field_y, field_width)
@@ -72,19 +72,21 @@ class RadioButton:
         x_offset = 0
         max_width = field_width * 0.95
         current_row_y = field_y
+        font_size = self.generator.check_radio_label_size
+        radio_size = self.generator.radio_size
 
         for i, (value, option_label) in enumerate(options_list):
-            option_text_width = c.stringWidth(option_label, "Helvetica", 9)
-            option_width = 18 + option_text_width + 8
+            option_text_width = c.stringWidth(option_label, self.generator.font_family, font_size)
+            option_width = (radio_size + 7) + option_text_width + 8
 
             if x_offset > 0 and x_offset + option_width > max_width:
-                current_row_y -= 25
+                current_row_y -= radio_size + 6
                 x_offset = 0
 
             radio_x = field_x + x_offset
-            radio_y = current_row_y - 15
-            text_x = radio_x + 18
-            text_y = current_row_y - 12
+            radio_y = current_row_y - radio_size - 4
+            text_x = radio_x + radio_size + 7
+            text_y = current_row_y - radio_size - 1
 
             # FIXED: Use shape="square" and buttonStyle="check" to avoid Adobe Acrobat rendering issues
             c.acroForm.radio(
@@ -93,7 +95,7 @@ class RadioButton:
                 value=value,
                 x=radio_x,
                 y=radio_y,
-                size=12,
+                size=radio_size,
                 selected=0,
                 buttonStyle="check",   # Square with checkmark when selected
                 shape="square",        # Square outline
@@ -108,18 +110,19 @@ class RadioButton:
             )
 
             # Draw option label
+            c.setFont(self.generator.font_family, font_size)
             c.setFillColor(colors.black)  # Use colors.black not string
             c.drawString(text_x, text_y, option_label)
             x_offset += option_width
 
-        return current_row_y - 20
+        return current_row_y - self.generator.field_spacing * 0.65
 
     def _can_fit_horizontally(self, c, options_list, field_width):
         """Check horizontal spacing - kept for potential future use"""
-        c.setFont("Helvetica", 9)
+        c.setFont(self.generator.font_family, self.generator.check_radio_label_size)
         total_width = 0
         for value, option_label in options_list:
-            option_width = 18 + c.stringWidth(option_label, "Helvetica", 9) + 25
+            option_width = 18 + c.stringWidth(option_label, self.generator.font_family, self.generator.check_radio_label_size) + 25
             total_width += option_width
 
         return total_width <= (field_width * 0.9)

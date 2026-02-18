@@ -8,13 +8,13 @@ from typing import Dict, Any, Optional
 
 # Quick prompt to detect form name/category from PDF
 FORM_DETECTION_PROMPT = """Look at this PDF form and tell me:
-1. What is the form's title/name? (e.g., "Patient Registration Form", "Medical History", "HIPAA Authorization")
-2. What category does it belong to? (e.g., "Patient Intake", "Medical History", "Consent", "Insurance", "General")
+1. What is the form's title/name? Keep it SHORT — 2 to 5 words max (e.g., "Patient Registration", "Medical History", "HIPAA Authorization", "Treatment Consent"). Do NOT use long verbose titles. Shorten and simplify.
+2. What category does it belong to? (e.g., "Patient Intake", "Medical History", "Consent", "Insurance", "General") — 3-5 words max.
 
 Respond in this exact JSON format only, no other text:
-{"form_name": "The Form Title", "category": "Category Name"}
+{"form_name": "Short Form Title", "category": "Category Name"}
 
-Look for the form title at the top of the document, in headers, or any prominent text that indicates what this form is for."""
+Look for the form title at the top of the document, in headers, or any prominent text that indicates what this form is for. Always simplify the title — never copy it verbatim if it's long."""
 
 # The prompt template for form analysis
 FORM_ANALYSIS_PROMPT = """Analyze this PDF form and generate a complete JSON structure for my fillable PDF form generator.
@@ -32,7 +32,7 @@ FORM_ANALYSIS_PROMPT = """Analyze this PDF form and generate a complete JSON str
       "{form_name_key}": {{
         "form_name": "{form_name_key}",
         "submission_url": "{{{{%/processors/forms/pdf_form_email}}}}",
-        "subject": "Form Submission: {category}",
+        "subject": "<generate a concise email subject line for this form submission notification, e.g. 'New Patient Intake Form Submission'>",
         "confirmation": "/custom/content/thank_you/thank_you.html",
         "pdf": "/custom/pdfs/{form_name_key}.pdf",
         "category": "{category}",
@@ -46,6 +46,9 @@ FORM_ANALYSIS_PROMPT = """Analyze this PDF form and generate a complete JSON str
 }}
 
 ---
+
+## IMPORTANT NOTES ON METADATA FIELDS
+- **subject**: This is the EMAIL SUBJECT LINE sent to the client when the form is submitted. Generate a clear, professional subject like "New Patient Intake Form Submission" or "New Medical History Form Received". It should tell the recipient what form was submitted.
 
 ## REQUIRED WRAPPER (Start of fields array)
 
@@ -78,7 +81,7 @@ FORM_ANALYSIS_PROMPT = """Analyze this PDF form and generate a complete JSON str
 
 **Multiple choice - pick ONE (use radio):** `{{"name": "field_name", "label": "Label", "email_label": "Label", "type": "radio", "option": ["Option A", "Option B", "Option C"]}}`
 
-**Multiple choice - pick MANY (use checkbox):** `{{"name": "field_name", "label": "Label", "email_label": "Label", "type": "checkbox", "option": ["Option 1", "Option 2", "Option 3"]}}`
+**Multiple choice - pick MANY (use checkbox):** `{{"name": "field_name", "label": "Label", "email_label": "Label", "type": "checkbox", "option": {{"option_1": "Option 1", "option_2": "Option 2", "option_3": "Option 3"}}}}`
 
 **Agreement checkbox:** `{{"name": "acknowledgement", "label": "", "email_label": "", "type": "checkbox", "option": {{"checked": "<p>I certify that the information provided is accurate...</p>"}}}}`
 
@@ -667,6 +670,12 @@ class FormAnalyzer:
             if end > start:
                 text = text[start:end].strip()
 
+        # If text doesn't start with '{', search for the first '{' in the text
+        if not text.startswith('{'):
+            brace_pos = text.find('{')
+            if brace_pos >= 0:
+                text = text[brace_pos:]
+
         # Try to find JSON object boundaries
         if text.startswith('{'):
             # Find matching closing brace
@@ -687,6 +696,7 @@ class FormAnalyzer:
             return json.loads(text)
         except json.JSONDecodeError as e:
             print(f"   JSON parse error: {e}")
+            print(f"   Response starts with: {response_text[:200]!r}")
             return None
 
     def detect_form_info(self, pdf_path: str) -> Optional[Dict[str, str]]:
@@ -779,7 +789,7 @@ class FormAnalyzer:
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=8192,
+                max_tokens=16384,
                 messages=[{
                     "role": "user",
                     "content": content
@@ -789,6 +799,9 @@ class FormAnalyzer:
             # Extract response text
             response_text = response.content[0].text
             print(f"   Received response ({len(response_text)} chars)")
+
+            if response.stop_reason == 'max_tokens':
+                print("   WARNING: Response was truncated (hit max_tokens limit)")
 
             # Parse JSON from response
             return self._extract_json(response_text)

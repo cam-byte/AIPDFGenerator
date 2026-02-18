@@ -207,10 +207,11 @@ class LabelManager:
         is_list = "<ul>" in label.lower() or "<li>" in label.lower() or "<ol>" in label.lower()
         is_paragraph = "<p>" in label.lower() and "</p>" in label.lower() and not is_list
 
-        # Use full page width for paragraphs and lists, field width for others
-        if is_paragraph or is_list:
+        # Use full page width for paragraphs, lists, and h1 headers
+        is_h1 = '<h1>' in label.lower()
+        if is_paragraph or is_list or is_h1:
             wrap_width = self.generator.page_width - 2 * self.generator.margin_x
-            line_height = style.font_size + 6  # Increased line height for paragraphs and lists
+            line_height = style.font_size + 4 if (is_paragraph or is_list) else style.font_size + 2
         else:
             wrap_width = self.field_width
             line_height = style.font_size + 1  # Normal line height for other labels
@@ -263,9 +264,9 @@ class LabelManager:
         if (is_paragraph or is_list) and hasattr(style, 'paragraph_margin_bottom'):
             self.generator.current_y -= style.paragraph_margin_bottom
 
-        # Draw underline for h1 headers if requested
+        # Draw underline for h1 headers BELOW all text with clearance
         if draw_line and clean_text.strip():
-            line_y = self.generator.current_y + line_height + 7
+            line_y = self.generator.current_y + (line_height - style.font_size - 2)
             canvas.setStrokeColor(self.colors['accent'])
             canvas.setLineWidth(1)
             canvas.line(self.margin_x, line_y, self.margin_x + wrap_width, line_y)
@@ -324,9 +325,9 @@ class LabelManager:
         if (is_paragraph or is_list) and hasattr(style, 'paragraph_margin_bottom'):
             self.generator.current_y -= style.paragraph_margin_bottom
 
-        # Draw underline for h1 headers if requested
+        # Draw underline for h1 headers BELOW all text with clearance
         if draw_line and clean_text.strip():
-            line_y = self.generator.current_y + line_height + 7
+            line_y = self.generator.current_y + (line_height - style.font_size - 2)
             canvas.setStrokeColor(self.colors['accent'])
             canvas.setLineWidth(1)
             canvas.line(self.margin_x, line_y, self.margin_x + wrap_width, line_y)
@@ -517,14 +518,7 @@ class LabelManager:
 
     def _draw_text_lines(self, canvas, wrapped_lines, line_height, tight=False):
         """Draw regular text lines"""
-        lines_drawn = 0
-
         for line in wrapped_lines:
             if line.strip():
                 canvas.drawString(self.margin_x, self.generator.current_y, line)
                 self.generator.current_y -= line_height - (10 if tight else 0)
-                lines_drawn += 1
-
-        # Add spacing after text
-        if lines_drawn > 0 and not tight:
-            self.generator.current_y -= self.label_styles['p'].spacing_after if hasattr(self, 'label_styles') else 5

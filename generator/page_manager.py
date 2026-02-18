@@ -73,7 +73,8 @@ class PageManager:
 
         # Draw location columns on the RIGHT (right-aligned, columns fill from right)
         # Text should start at logo_top_y minus a small offset for text baseline
-        canvas.setFont("Helvetica", 9)
+        hfs = self.generator.header_font_size
+        canvas.setFont(self.generator.font_family, hfs)
         canvas.setFillColor(self.colors['primary'])
 
         locations = getattr(self.generator, 'locations', None)
@@ -90,9 +91,9 @@ class PageManager:
                 city_state_zip = loc.get('city_state_zip', '')
                 phone = loc.get('phone', '')
                 max_width = max(
-                    canvas.stringWidth(street, "Helvetica", 9),
-                    canvas.stringWidth(city_state_zip, "Helvetica", 9),
-                    canvas.stringWidth(phone, "Helvetica", 9)
+                    canvas.stringWidth(street, self.generator.font_family, hfs),
+                    canvas.stringWidth(city_state_zip, self.generator.font_family, hfs),
+                    canvas.stringWidth(phone, self.generator.font_family, hfs)
                 )
                 col_widths.append(max_width)
 
@@ -125,12 +126,12 @@ class PageManager:
 
         else:
             # Backwards compatible: single address/phone on the right
-            canvas.setFont("Helvetica", 9)
+            canvas.setFont(self.generator.font_family, hfs)
             if self.generator.address:
-                text_width = canvas.stringWidth(self.generator.address, "Helvetica", 9)
+                text_width = canvas.stringWidth(self.generator.address, self.generator.font_family, hfs)
                 canvas.drawString(self.page_width - self.margin_x - text_width, header_y, self.generator.address)
             if self.generator.phone:
-                text_width = canvas.stringWidth(self.generator.phone, "Helvetica", 9)
+                text_width = canvas.stringWidth(self.generator.phone, self.generator.font_family, hfs)
                 canvas.drawString(self.page_width - self.margin_x - text_width, header_y - line_height, self.generator.phone)
             locations_bottom_y = header_y - (line_height * 2)
 

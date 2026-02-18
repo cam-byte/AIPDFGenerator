@@ -83,7 +83,9 @@ class GroupField:
         config = self.layout_groups[group_name]
         columns = config['columns']
         widths = config['widths']
-        spacing = config['spacing']
+        # Use user-configured col_spacing for functional groups, keep original for special ones
+        default_spacing = config['spacing']
+        spacing = getattr(self.generator, 'col_spacing', default_spacing) if default_spacing > 2 else default_spacing
 
         total_spacing = spacing * (columns - 1) if columns > 1 else 0
         available_width = self.field_width - total_spacing
@@ -92,10 +94,9 @@ class GroupField:
         self.generator.group_spacing = spacing
         self.generator.group_columns = columns
 
-        # NEW: consistent vertical rhythm used by checkbox rows
-        # works well with 12px boxes + 9/10pt labels
-        self.generator.group_row_height = 22
-        self.generator.group_row_gap = 10  # gap added after a completed row
+        # Vertical rhythm for checkbox/radio rows — user-configurable
+        self.generator.group_row_height = getattr(self.generator, 'group_row_height_setting', 22)
+        self.generator.group_row_gap = getattr(self.generator, 'group_row_gap_setting', 10)
 
     def _initialize_group_with_config(self, group_name, num_columns):
         """Initialize a group with a custom column count (for tooth_container)"""
@@ -113,9 +114,11 @@ class GroupField:
         self.generator.group_spacing = spacing
         self.generator.group_columns = num_columns
 
-        # Tighter settings for dental charts
-        self.generator.group_row_height = 20
-        self.generator.group_row_gap = 8
+        # Dental charts use slightly tighter settings
+        base_height = getattr(self.generator, 'group_row_height_setting', 22)
+        base_gap = getattr(self.generator, 'group_row_gap_setting', 10)
+        self.generator.group_row_height = max(10, base_height - 2)
+        self.generator.group_row_gap = max(2, base_gap - 2)
 
     def end_group(self):
         """End the current group and align fields properly"""

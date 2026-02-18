@@ -89,7 +89,7 @@ h1 {
 }
 
 .section-body.open {
-	max-height: 500px;
+	max-height: 1600px;
 }
 
 .section-body-inner {
@@ -620,4 +620,91 @@ select {
 .btn-remove-pdf:hover {
 	color: #f87171;
 	border-color: #f87171;
+}
+
+/* --- Preset button active state --- */
+.preset-btn.active {
+	background: #6366f1;
+	border-color: #6366f1;
+	color: #fff;
+}
+
+/* --- PDF preview pages --- */
+.pdf-page {
+	background: #fff;
+	color: #000;
+	aspect-ratio: 8.5 / 11;
+	padding: 6.3%;
+	border-radius: 4px;
+	box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+	margin-bottom: 12px;
+	overflow: hidden;
+	font-size: 9px;
+}
+
+.prev-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	margin-bottom: 6px;
+}
+
+.prev-logo-box {
+	width: 48px;
+	height: 20px;
+	border: 1px solid #ccc;
+	border-radius: 2px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #aaa;
+	font-size: 6px;
+	flex-shrink: 0;
+}
+
+.prev-header-text {
+	text-align: right;
+	color: #333;
+	line-height: 1.4;
+}
+
+.prev-checkbox {
+	width: 9px;
+	height: 9px;
+	display: inline-block;
+	box-sizing: border-box;
+}
+
+.prev-input {
+	box-sizing: border-box;
+	height: 15px;
+}
+
+.prev-textarea {
+	box-sizing: border-box;
+	height: 42px;
+}
+
+.prev-divider {
+	border: none;
+	border-top: 1px solid #ccc;
+	margin: 6px 0 8px;
+}
+
+.prev-row-2col {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 20px;
+}
+
+.prev-row-3col {
+	display: grid;
+	grid-template-columns: 1fr 1fr 1fr;
+	gap: 20px;
+}
+
+.prev-row-4col {
+	display: grid;
+	grid-template-columns: 4fr 2.8fr 1.5fr 1.7fr;
+	gap: 20px;
 }

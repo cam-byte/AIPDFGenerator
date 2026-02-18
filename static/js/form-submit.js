@@ -1,5 +1,5 @@
 // =====================================================================
-// 9. FORM SUBMISSION (supports single + batch)
+// 9. FORM SUBMISSION (supports single + batch + regenerate from JSON)
 // =====================================================================
 (function () {
 	function collectLocations() {
@@ -30,6 +30,8 @@
 	form.addEventListener('submit', function (e) {
 		e.preventDefault();
 
+		var isRegenerate = window.currentMode === 'regenerate';
+
 		var fd = new FormData();
 		var businessNameEl = document.getElementById('business_name');
 		fd.append('business_name', (businessNameEl && businessNameEl.value) || '');
@@ -41,41 +43,64 @@
 
 		fd.append('locations', JSON.stringify(collectLocations()));
 
-		if (!window.selectedPdfs || window.selectedPdfs.length === 0) {
-			showResult(false, 'Please upload at least one PDF.');
-			return;
-		}
+		var sepEl = document.getElementById('separate_locations');
+		fd.append('separate_locations', sepEl && sepEl.checked ? '1' : '0');
 
-		// Append every selected PDF under the same field name
-		for (var i = 0; i < window.selectedPdfs.length; i++) {
-			fd.append('pdf', window.selectedPdfs[i]);
+		fd.append('pdf_options', JSON.stringify(typeof collectPdfOptions === 'function' ? collectPdfOptions() : {}));
+
+		if (isRegenerate) {
+			// Regenerate mode: require JSON files
+			if (!window.selectedJsons || window.selectedJsons.length === 0) {
+				showResult(false, 'Please upload at least one JSON file.');
+				return;
+			}
+			for (var j = 0; j < window.selectedJsons.length; j++) {
+				fd.append('json', window.selectedJsons[j]);
+			}
+		} else {
+			// Upload mode: require PDF files
+			if (!window.selectedPdfs || window.selectedPdfs.length === 0) {
+				showResult(false, 'Please upload at least one PDF.');
+				return;
+			}
+			for (var i = 0; i < window.selectedPdfs.length; i++) {
+				fd.append('pdf', window.selectedPdfs[i]);
+			}
 		}
 
 		// Clear old result
 		resultEl.classList.remove('visible', 'success', 'error');
 		resultMsg.textContent = '';
 
-		// Start progress timer
-		var totalSec = calculateTotalSeconds();
-		var pdfCount = window.selectedPdfs.length;
-		var timer = new ProgressTimer(submitBtn, totalSec, window.pdfPageCount || 1, pdfCount);
+		// Start progress timer (regenerate is fast — use short estimate)
+		var totalSec = isRegenerate ? 5 : calculateTotalSeconds();
+		var fileCount = isRegenerate ? window.selectedJsons.length : window.selectedPdfs.length;
+		var timer = new ProgressTimer(submitBtn, totalSec, window.pdfPageCount || 1, fileCount);
 		timer.start();
 
-		fetch('/process', { method: 'POST', body: fd })
+		var endpoint = isRegenerate ? '/regenerate' : '/process';
+
+		fetch(endpoint, { method: 'POST', body: fd })
 			.then(function (res) {
 				if (!res.ok) {
 					return res.json().catch(function () { return null; }).then(function (data) {
 						throw new Error((data && data.error) || 'Request failed (' + res.status + ')');
 					});
 				}
-				return res.blob();
+				return res.blob().then(function (blob) {
+					// Derive filename from Content-Disposition or fall back to type
+					var disposition = res.headers.get('Content-Disposition') || '';
+					var match = disposition.match(/filename="?([^";\n]+)"?/);
+					var filename = match ? match[1] : (blob.type === 'application/pdf' ? 'output.pdf' : 'output.zip');
+					return { blob: blob, filename: filename };
+				});
 			})
-			.then(function (blob) {
-				var url = URL.createObjectURL(blob);
+			.then(function (result) {
+				var url = URL.createObjectURL(result.blob);
 
 				var a = document.createElement('a');
 				a.href = url;
-				a.download = 'output.zip';
+				a.download = result.filename;
 				document.body.appendChild(a);
 				a.click();
 				a.remove();

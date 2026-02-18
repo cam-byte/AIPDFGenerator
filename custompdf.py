@@ -29,6 +29,26 @@ import argparse
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _extract_city(city_state_zip):
+    """Extract a slug from a city/state/zip string.
+
+    'Austin, TX 78701' -> 'austin'
+    'New York, NY 10001' -> 'new_york'
+    """
+    text = (city_state_zip or '').strip()
+    if ',' in text:
+        city = text.split(',')[0].strip()
+    else:
+        city = text.split()[0] if text else 'unknown'
+    return city.lower().replace(' ', '_')
+
+
+def _write_html(output_path, form_key):
+    """Write an HTML file containing the autofill template tag."""
+    with open(output_path, 'w') as f:
+        f.write('{{!/autofills/forms/form_fields/' + form_key + '->content->' + form_key + '}}')
+
+
 def setup_output_dirs():
     """Create/clear json and pdf output directories for batch mode."""
     json_dir = os.path.join(SCRIPT_DIR, "json")
@@ -191,7 +211,7 @@ def generate_fillable_pdf(json_path, output_path, business_info):
     generate_form_pdf(json_path, output_path, business_info=business_info)
 
 
-def process_single_pdf(pdf_path, business_info, json_dir=None, pdf_dir=None, auto_detect=False):
+def process_single_pdf(pdf_path, business_info, json_dir=None, pdf_dir=None, auto_detect=False, separate=False):
     """
     Process a single PDF file.
 
@@ -201,9 +221,10 @@ def process_single_pdf(pdf_path, business_info, json_dir=None, pdf_dir=None, aut
         json_dir: Output directory for JSON (None = SCRIPT_DIR)
         pdf_dir: Output directory for PDF (None = SCRIPT_DIR)
         auto_detect: If True, auto-detect form name/category without prompting
+        separate: If True, generate separate output per location
 
     Returns:
-        tuple: (success: bool, form_key: str)
+        tuple: (success: bool, form_keys: list[str])
     """
     print(f"\n[PDF] Input: {os.path.basename(pdf_path)}")
 
@@ -228,11 +249,9 @@ def process_single_pdf(pdf_path, business_info, json_dir=None, pdf_dir=None, aut
     form_key = form_name.lower().replace(' ', '_').replace('-', '_')
     form_key = ''.join(c for c in form_key if c.isalnum() or c == '_')
 
-    # Output paths
+    # Output directories
     json_output_dir = json_dir or SCRIPT_DIR
     pdf_output_dir = pdf_dir or SCRIPT_DIR
-    json_output = os.path.join(json_output_dir, f"{form_key}.json")
-    pdf_output = os.path.join(pdf_output_dir, f"{form_key}_fillable.pdf")
 
     # Step 1: Analyze PDF with Claude
     print("\n" + "-" * 40)
@@ -243,34 +262,77 @@ def process_single_pdf(pdf_path, business_info, json_dir=None, pdf_dir=None, aut
         form_data = analyze_pdf_with_claude(pdf_path, form_details)
     except Exception as e:
         print(f"\n[X] Claude analysis failed: {e}")
-        return False, form_key
+        return False, [form_key]
 
     if not form_data:
         print("\n[X] Failed to generate form structure")
-        return False, form_key
+        return False, [form_key]
 
-    # Save JSON
-    with open(json_output, 'w') as f:
-        json.dump(form_data, indent=2, fp=f)
-    print(f"[OK] JSON saved: {os.path.basename(json_output)}")
+    locations = business_info.get('locations', [])
 
-    # Step 2: Generate fillable PDF
-    print("\n" + "-" * 40)
-    print("[PRINT] STEP 2: Generating fillable PDF...")
-    print("-" * 40)
+    if separate and len(locations) >= 2:
+        # Generate separate output per location
+        form_keys = []
+        for loc in locations:
+            city = _extract_city(loc.get('city_state_zip', ''))
+            loc_key = f'{form_key}_{city}'
+            form_keys.append(loc_key)
 
-    try:
-        generate_fillable_pdf(json_output, pdf_output, business_info)
-        print(f"[OK] PDF saved: {os.path.basename(pdf_output)}")
-    except Exception as e:
-        print(f"\n[!] PDF generation failed: {e}")
-        print("   JSON was saved - you can fix and regenerate manually")
-        return False, form_key
+            loc_info = dict(business_info)
+            loc_info['locations'] = [loc]
+            loc_info['address'] = f"{loc.get('street', '')} {loc.get('city_state_zip', '')}".strip()
+            loc_info['phone'] = loc.get('phone', '')
 
-    return True, form_key
+            json_output = os.path.join(json_output_dir, f"{loc_key}.json")
+            with open(json_output, 'w') as f:
+                json.dump(form_data, indent=2, fp=f)
+            print(f"[OK] JSON saved: {os.path.basename(json_output)}")
+
+            html_output = os.path.join(json_output_dir, f"{loc_key}.html")
+            _write_html(html_output, loc_key)
+            print(f"[OK] HTML saved: {os.path.basename(html_output)}")
+
+            print("\n" + "-" * 40)
+            print(f"[PRINT] Generating fillable PDF for {city}...")
+            print("-" * 40)
+
+            pdf_output = os.path.join(pdf_output_dir, f"{loc_key}_fillable.pdf")
+            try:
+                generate_fillable_pdf(json_output, pdf_output, loc_info)
+                print(f"[OK] PDF saved: {os.path.basename(pdf_output)}")
+            except Exception as e:
+                print(f"\n[!] PDF generation failed for {city}: {e}")
+
+        return True, form_keys
+    else:
+        # Normal mode: single set of files
+        json_output = os.path.join(json_output_dir, f"{form_key}.json")
+        with open(json_output, 'w') as f:
+            json.dump(form_data, indent=2, fp=f)
+        print(f"[OK] JSON saved: {os.path.basename(json_output)}")
+
+        html_output = os.path.join(json_output_dir, f"{form_key}.html")
+        _write_html(html_output, form_key)
+        print(f"[OK] HTML saved: {os.path.basename(html_output)}")
+
+        # Step 2: Generate fillable PDF
+        print("\n" + "-" * 40)
+        print("[PRINT] STEP 2: Generating fillable PDF...")
+        print("-" * 40)
+
+        pdf_output = os.path.join(pdf_output_dir, f"{form_key}_fillable.pdf")
+        try:
+            generate_fillable_pdf(json_output, pdf_output, business_info)
+            print(f"[OK] PDF saved: {os.path.basename(pdf_output)}")
+        except Exception as e:
+            print(f"\n[!] PDF generation failed: {e}")
+            print("   JSON was saved - you can fix and regenerate manually")
+            return False, [form_key]
+
+        return True, [form_key]
 
 
-def batch_process():
+def batch_process(separate=False):
     """Process all PDFs in the folder in batch mode."""
     print("\n" + "=" * 50)
     print("  [BATCH] BATCH PDF FORM GENERATOR")
@@ -306,10 +368,10 @@ def batch_process():
         print(f"  [{i}/{len(pdfs)}] Processing: {os.path.basename(pdf_path)}")
         print("=" * 50)
 
-        success, form_key = process_single_pdf(
-            pdf_path, business_info, json_dir=json_dir, pdf_dir=pdf_dir, auto_detect=True
+        success, form_keys = process_single_pdf(
+            pdf_path, business_info, json_dir=json_dir, pdf_dir=pdf_dir, auto_detect=True, separate=separate
         )
-        results.append((os.path.basename(pdf_path), success, form_key))
+        results.append((os.path.basename(pdf_path), success, form_keys))
 
     # Summary
     print("\n" + "=" * 50)
@@ -321,12 +383,13 @@ def batch_process():
 
     print(f"\n[OK] Successful: {len(successful)}/{len(results)}")
     if successful:
-        for pdf_name, _, form_key in successful:
-            print(f"   - {pdf_name} -> {form_key}_fillable.pdf")
+        for pdf_name, _, form_keys in successful:
+            for fk in form_keys:
+                print(f"   - {pdf_name} -> {fk}_fillable.pdf")
 
     if failed:
         print(f"\n[X] Failed: {len(failed)}/{len(results)}")
-        for pdf_name, _, form_key in failed:
+        for pdf_name, _, form_keys in failed:
             print(f"   - {pdf_name}")
 
     print(f"\n[FOLDER] Output locations:")
@@ -365,7 +428,7 @@ def main():
                 print(f"   Address: {business_info.get('address', 'N/A')}")
                 print(f"   Phone:   {business_info.get('phone', 'N/A')}")
 
-        success, form_key = process_single_pdf(pdf_path, business_info)
+        success, form_keys = process_single_pdf(pdf_path, business_info)
 
         # Summary for this form
         print("\n" + "=" * 50)
@@ -375,11 +438,12 @@ def main():
             print("  [!] COMPLETED WITH ERRORS")
         print("=" * 50)
         print(f"\n[FOLDER] Output files in {SCRIPT_DIR}/:")
-        print(f"   - {form_key}.json")
-        json_output = os.path.join(SCRIPT_DIR, f"{form_key}.json")
-        pdf_output = os.path.join(SCRIPT_DIR, f"{form_key}_fillable.pdf")
-        if os.path.exists(pdf_output):
-            print(f"   - {form_key}_fillable.pdf")
+        for fk in form_keys:
+            print(f"   - {fk}.json")
+            if os.path.exists(os.path.join(SCRIPT_DIR, f"{fk}.html")):
+                print(f"   - {fk}.html")
+            if os.path.exists(os.path.join(SCRIPT_DIR, f"{fk}_fillable.pdf")):
+                print(f"   - {fk}_fillable.pdf")
 
         # Ask if they want to create another form
         print("\n" + "-" * 40)
@@ -398,11 +462,16 @@ if __name__ == "__main__":
         action='store_true',
         help='Batch mode: process all PDFs in folder, output to json/ and pdf/ subdirectories'
     )
+    parser.add_argument(
+        '--separate',
+        action='store_true',
+        help='Generate separate form for each location'
+    )
     args = parser.parse_args()
 
     try:
         if args.batch:
-            batch_process()
+            batch_process(separate=args.separate)
         else:
             main()
     except KeyboardInterrupt:

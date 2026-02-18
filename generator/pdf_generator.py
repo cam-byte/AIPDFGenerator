@@ -14,7 +14,7 @@ from .constants import (
     FLOW_BREAK_FIELD_TYPES,
     AUTO_FLOW_CONFIG
 )
-from .label_styles import LABEL_STYLES
+from .label_styles import LABEL_STYLES, LabelStyle, FONT_FAMILIES, DEFAULT_FONT_FAMILY, build_label_styles
 from .page_manager import PageManager
 from .label_manager import LabelManager
 from .fields.text_field import TextField
@@ -48,8 +48,57 @@ class ModernPDFFormGenerator:
         # Support multiple locations - each with street, city_state_zip, phone
         self.locations = biz.get('locations')
 
+        # PDF options — granular style overrides
+        pdf_opts = biz.get('pdf_options') or {}
+
+        self.field_height = int(pdf_opts.get('input_height', 15))
+        self.textarea_height = int(pdf_opts.get('textarea_height', 42))
+        self.checkbox_size = int(pdf_opts.get('checkbox_size', 9))
+        self.radio_size = int(pdf_opts.get('checkbox_size', 9))
+        self.check_radio_label_size = float(pdf_opts.get('check_radio_label_size', 7.5))
+        self.input_font_size = min(self.field_height * 0.55, 12)
+        self.field_spacing = float(pdf_opts.get('field_spacing', 17))
+        self.label_gap = float(pdf_opts.get('label_gap', 3))
+        self.col_spacing = float(pdf_opts.get('col_spacing', 17))
+        self.group_row_height_setting = int(pdf_opts.get('group_row_height', 22))
+        self.group_row_gap_setting = int(pdf_opts.get('group_row_gap', 10))
+        self.header_font_size = float(pdf_opts.get('header_font_size', 8))
+
+        # Font family
+        font_family_name = pdf_opts.get('font_family', DEFAULT_FONT_FAMILY)
+        if font_family_name not in FONT_FAMILIES:
+            font_family_name = DEFAULT_FONT_FAMILY
+        self.font_family, self.font_family_bold = FONT_FAMILIES[font_family_name]
+
         self.colors = COLORS
-        self.label_styles = LABEL_STYLES
+
+        # Build label styles for the selected font family, then apply size overrides
+        base_styles = build_label_styles(font_family_name)
+
+        size_overrides = {
+            'h1': pdf_opts.get('h1_size'),
+            'h3': pdf_opts.get('h3_size'),
+            'h4': pdf_opts.get('h4_size'),
+            'p': pdf_opts.get('p_size'),
+            'field_label': pdf_opts.get('field_label_size'),
+            'checkbox': pdf_opts.get('check_radio_label_size'),
+        }
+        has_overrides = any(v is not None for v in size_overrides.values())
+
+        if has_overrides or self.label_gap != 3:
+            self.label_styles = {}
+            for key, style in base_styles.items():
+                override_size = size_overrides.get(key)
+                self.label_styles[key] = LabelStyle(
+                    font_name=style.font_name,
+                    font_size=float(override_size) if override_size is not None else style.font_size,
+                    color=style.color,
+                    spacing_before=style.spacing_before,
+                    spacing_after=float(self.label_gap) if key == 'field_label' else style.spacing_after,
+                    alignment=style.alignment,
+                )
+        else:
+            self.label_styles = base_styles
 
         # Group handling
         self.current_group = None
@@ -77,7 +126,7 @@ class ModernPDFFormGenerator:
 
     def _setup_canvas_for_acrobat(self, c):
         """CRITICAL: Set up canvas for Adobe Acrobat compatibility"""
-        c.setFont('Helvetica', 12)
+        c.setFont(self.font_family, 12)
         c.setFillColorRGB(0, 0, 0)
         c.setStrokeColorRGB(0, 0, 0)
 
@@ -191,8 +240,7 @@ class ModernPDFFormGenerator:
         # Handle label-only fields
         if field_type == 'label':
             style = self.label_manager.get_label_style(field_type, label)
-            draw_line = '<h1>' in label.lower()
-            self.label_manager.draw_label(c, label, style, draw_line)
+            self.label_manager.draw_label(c, label, style, draw_line=False)
         else:
             # Handle form fields
             try:
@@ -357,7 +405,11 @@ class ModernPDFFormGenerator:
             needed_height = _calculate_field_height(
                 field_type, label, field.get('option', {}),
                 self.field_width, self.field_height,
-                self.label_styles
+                self.label_styles,
+                textarea_height=self.textarea_height,
+                field_spacing=self.field_spacing,
+                checkbox_size=self.checkbox_size,
+                radio_size=self.radio_size,
             )
 
             is_section_title = field_type == 'label' and '<h3>' in label.lower()
