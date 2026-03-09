@@ -60,7 +60,7 @@
 		} else {
 			// Upload mode: require PDF files
 			if (!window.selectedPdfs || window.selectedPdfs.length === 0) {
-				showResult(false, 'Please upload at least one PDF.');
+				showResult(false, 'Please upload at least one PDF or image.');
 				return;
 			}
 			for (var i = 0; i < window.selectedPdfs.length; i++) {

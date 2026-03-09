@@ -320,6 +320,8 @@ class LabelManager:
             # Regular text wrapping for non-list content
             wrapped_lines = _wrap_text(clean_text, wrap_width, style.font_size, style.font_name)
             self._draw_text_lines(canvas, wrapped_lines, line_height)
+            if wrapped_lines and any(l.strip() for l in wrapped_lines):
+                self.generator.current_y -= style.spacing_after
 
         # Handle margins and underlines
         if (is_paragraph or is_list) and hasattr(style, 'paragraph_margin_bottom'):

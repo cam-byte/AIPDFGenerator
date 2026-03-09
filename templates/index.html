@@ -642,15 +642,15 @@
 			<!-- PDF Upload -->
 			<div class="section" id="pdfUploadSection">
 				<div style="display:flex; gap:10px;">
-					<i class="fa-solid fa-file-pdf"></i>
-					<div class="section-title">PDF Upload</div>
+					<i class="fa-solid fa-file-arrow-up"></i>
+					<div class="section-title">Upload Form</div>
 				</div>
 
 				<div class="dropzone" id="dropzone">
 					<!-- NOTE: multiple -->
-					<input type="file" id="pdfInput" name="pdf" accept=".pdf" multiple>
-					<div class="dropzone-icon"><i class="fa-solid fa-file-pdf"></i></div>
-					<div class="dropzone-text">Drag & drop PDFs here, or click to browse</div>
+					<input type="file" id="pdfInput" name="pdf" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif" multiple>
+					<div class="dropzone-icon"><i class="fa-solid fa-file-arrow-up"></i></div>
+					<div class="dropzone-text">Drag & drop PDFs or images here, or click to browse</div>
 					<div class="dropzone-count" id="pdfCount"></div>
 				</div>
 
@@ -658,7 +658,7 @@
 				<div id="pdfPreviewWrap" style="margin-top:14px; display:none;">
 					<div
 						style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px;">
-						<label style="margin-bottom:0;">PDF Preview (page 1)</label>
+						<label style="margin-bottom:0;">File Preview</label>
 
 						<div style="display:flex; gap:10px; align-items:center;">
 							<button type="button" class="btn-sm" id="clearAllPdfsBtn">

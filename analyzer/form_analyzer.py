@@ -3,8 +3,12 @@ import anthropic
 import base64
 import json
 import io
+import os
 from pdf2image import convert_from_path
+from PIL import Image
 from typing import Dict, Any, Optional
+
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
 
 # Quick prompt to detect form name/category from PDF
 FORM_DETECTION_PROMPT = """Look at this PDF form and tell me:
@@ -620,7 +624,10 @@ class FormAnalyzer:
     def _pdf_to_images(self, pdf_path: str) -> list:
         """Convert PDF pages to base64-encoded images."""
         print(f"   Converting PDF to images...")
-        images = convert_from_path(pdf_path, dpi=150)
+        import shutil
+        poppler_path = shutil.which('pdftoppm')
+        poppler_path = os.path.dirname(poppler_path) if poppler_path else '/opt/homebrew/bin'
+        images = convert_from_path(pdf_path, dpi=150, poppler_path=poppler_path)
         print(f"   Found {len(images)} page(s)")
 
         encoded_images = []
@@ -636,6 +643,21 @@ class FormAnalyzer:
             print(f"   Encoded page {i + 1}")
 
         return encoded_images
+
+    def _image_file_to_base64(self, image_path: str) -> tuple:
+        """Read an image file and return (base64_data, media_type) as JPEG."""
+        print(f"   Encoding image: {os.path.basename(image_path)}")
+        with open(image_path, 'rb') as f:
+            raw = f.read()
+
+        img = Image.open(io.BytesIO(raw))
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=85)
+        encoded = base64.standard_b64encode(buf.getvalue()).decode('utf-8')
+        return encoded, 'image/jpeg'
 
     def _build_prompt(self) -> str:
         """Build the analysis prompt with user inputs."""
@@ -757,6 +779,76 @@ class FormAnalyzer:
             print(f"   Detection failed: {e}")
 
         return None
+
+    def detect_form_info_from_image(self, image_path: str) -> Optional[Dict[str, str]]:
+        """Quick detection of form name and category from an image file."""
+        print(f"   Detecting form info from image...")
+        img_data, media_type = self._image_file_to_base64(image_path)
+
+        content = [
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": img_data}
+            },
+            {"type": "text", "text": FORM_DETECTION_PROMPT}
+        ]
+
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=256,
+                messages=[{"role": "user", "content": content}]
+            )
+            response_text = response.content[0].text.strip()
+
+            if response_text.startswith('{'):
+                result = json.loads(response_text)
+                print(f"   Detected: {result.get('form_name', 'Unknown')}")
+                return result
+
+            if '{' in response_text:
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                result = json.loads(response_text[start:end])
+                print(f"   Detected: {result.get('form_name', 'Unknown')}")
+                return result
+
+        except (json.JSONDecodeError, anthropic.APIError) as e:
+            print(f"   Detection failed: {e}")
+
+        return None
+
+    def analyze_image(self, image_path: str) -> Optional[Dict[str, Any]]:
+        """Analyze a form image using Claude's vision capabilities."""
+        img_data, media_type = self._image_file_to_base64(image_path)
+
+        content = [
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": img_data}
+            },
+            {"type": "text", "text": self._build_prompt()}
+        ]
+
+        print(f"   Sending image to Claude ({self.model})...")
+
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=16384,
+                messages=[{"role": "user", "content": content}]
+            )
+            response_text = response.content[0].text
+            print(f"   Received response ({len(response_text)} chars)")
+
+            if response.stop_reason == 'max_tokens':
+                print("   WARNING: Response was truncated (hit max_tokens limit)")
+
+            return self._extract_json(response_text)
+
+        except anthropic.APIError as e:
+            print(f"   API Error: {e}")
+            return None
 
     def analyze_pdf(self, pdf_path: str) -> Optional[Dict[str, Any]]:
         """Analyze a PDF form using Claude's vision capabilities."""

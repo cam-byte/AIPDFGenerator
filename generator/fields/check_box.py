@@ -433,8 +433,6 @@ class CheckBox:
         # --------- non-group behavior (horizontal packing) ----------
         checkbox_size = self.generator.checkbox_size
         gap = CHECKBOX_GAP
-        label_to_checkbox_gap = -8   # slightly less negative to tighten
-        self.generator.current_y -= label_to_checkbox_gap
 
         c.setFont(self.generator.font_family, check_label_size)
         c.setFillColor(self.colors['primary'])
@@ -502,7 +500,7 @@ class CheckBox:
         if self.generator.current_group is not None:
             self._handle_group_positioning(field_x, field_width, final_field_y, starting_y)
         else:
-            self.generator.current_y = final_field_y - 3
+            self.generator.current_y = final_field_y - 8
 
     # ---------- layout helpers ----------
 

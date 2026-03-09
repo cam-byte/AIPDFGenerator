@@ -29,6 +29,8 @@ SETTINGS_PATH = os.path.join(SCRIPT_DIR, 'settings.json')
 DEFAULT_PROVIDER = 'anthropic'
 DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 
+ALLOWED_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+
 
 # ---------------------------------------------------------------------------
 # Settings helpers
@@ -107,20 +109,29 @@ def _write_html(output_path, form_key):
 # ---------------------------------------------------------------------------
 
 def _validate_uploads(req, tmpdir):
-    """Validate and save uploaded files. Returns (pdf_paths, logo_path)."""
+    """Validate and save uploaded files. Returns (upload_paths, logo_path).
+
+    upload_paths is a list of (file_path, file_type) tuples where
+    file_type is 'pdf' or 'image'.
+    """
     pdf_files = req.files.getlist('pdf')
     pdf_files = [f for f in pdf_files if f and f.filename]
 
     if not pdf_files:
-        raise ValueError('No PDF file uploaded')
+        raise ValueError('No file uploaded')
 
-    pdf_paths = []
+    upload_paths = []
     for pdf_file in pdf_files:
-        if not pdf_file.filename.lower().endswith('.pdf'):
-            raise ValueError(f'File must be a PDF: {pdf_file.filename}')
-        pdf_path = os.path.join(tmpdir, pdf_file.filename)
-        pdf_file.save(pdf_path)
-        pdf_paths.append(pdf_path)
+        ext = os.path.splitext(pdf_file.filename)[1].lower()
+        if ext == '.pdf':
+            file_type = 'pdf'
+        elif ext in ALLOWED_IMAGE_EXTENSIONS:
+            file_type = 'image'
+        else:
+            raise ValueError(f'Unsupported file type: {pdf_file.filename}. Accepted: PDF, PNG, JPEG, WEBP, GIF')
+        file_path = os.path.join(tmpdir, pdf_file.filename)
+        pdf_file.save(file_path)
+        upload_paths.append((file_path, file_type))
 
     logo_path = None
     logo_file = req.files.get('logo')
@@ -128,7 +139,7 @@ def _validate_uploads(req, tmpdir):
         logo_path = os.path.join(tmpdir, logo_file.filename)
         logo_file.save(logo_path)
 
-    return pdf_paths, logo_path
+    return upload_paths, logo_path
 
 
 def _build_business_info(req, logo_path):
@@ -162,10 +173,15 @@ def _build_business_info(req, logo_path):
     }
 
 
-def _detect_and_analyze(pdf_path, api_key, model, filename):
-    """Auto-detect form info and analyze PDF. Returns (form_details, form_data)."""
+def _detect_and_analyze(file_path, api_key, model, filename, file_type='pdf'):
+    """Auto-detect form info and analyze a PDF or image. Returns (form_details, form_data)."""
     analyzer = FormAnalyzer(api_key, model, {})
-    form_details = analyzer.detect_form_info(pdf_path)
+
+    if file_type == 'image':
+        form_details = analyzer.detect_form_info_from_image(file_path)
+    else:
+        form_details = analyzer.detect_form_info(file_path)
+
     if not form_details:
         base_name = os.path.splitext(filename)[0]
         form_details = {
@@ -174,7 +190,11 @@ def _detect_and_analyze(pdf_path, api_key, model, filename):
         }
 
     analyzer = FormAnalyzer(api_key, model, form_details)
-    form_data = analyzer.analyze_pdf(pdf_path)
+
+    if file_type == 'image':
+        form_data = analyzer.analyze_image(file_path)
+    else:
+        form_data = analyzer.analyze_pdf(file_path)
 
     if not form_data:
         raise RuntimeError('Analysis returned no data')
@@ -237,19 +257,19 @@ def process_pdf():
         if not api_key:
             return jsonify({'error': 'No API key configured. Open Settings and add one.'}), 400
 
-        pdf_paths, logo_path = _validate_uploads(request, tmpdir)
+        upload_paths, logo_path = _validate_uploads(request, tmpdir)
         business_info = _build_business_info(request, logo_path)
 
-        # Collect all generated files across PDFs
+        # Collect all generated files across uploads
         all_output_files = []  # list of (arcname, filepath)
 
         separate = business_info.get('separate_locations', False)
         locations = business_info.get('locations', [])
 
-        for pdf_path in pdf_paths:
-            filename = os.path.basename(pdf_path)
+        for file_path, file_type in upload_paths:
+            filename = os.path.basename(file_path)
             form_details, form_data = _detect_and_analyze(
-                pdf_path, api_key, model, filename
+                file_path, api_key, model, filename, file_type
             )
 
             form_name = form_details['form_name']
@@ -303,7 +323,8 @@ def process_pdf():
                 zf.write(filepath, arcname)
         zip_buffer.seek(0)
 
-        download_name = 'batch_output.zip' if len(pdf_paths) > 1 else f'{os.path.splitext(os.path.basename(pdf_paths[0]))[0]}.zip'
+        download_name = ('batch_output.zip' if len(upload_paths) > 1
+                         else f'{os.path.splitext(os.path.basename(upload_paths[0][0]))[0]}.zip')
 
         return send_file(
             zip_buffer,

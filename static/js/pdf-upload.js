@@ -32,7 +32,12 @@
 	function updateDropzoneCount() {
 		var count = window.selectedPdfs.length;
 		if (count > 0) {
-			pdfCountEl.textContent = count + ' PDF' + (count === 1 ? '' : 's');
+			var pdfCount = window.selectedPdfs.filter(isPdfFile).length;
+			var imgCount = window.selectedPdfs.filter(isImageFile).length;
+			var parts = [];
+			if (pdfCount > 0) parts.push(pdfCount + ' PDF' + (pdfCount === 1 ? '' : 's'));
+			if (imgCount > 0) parts.push(imgCount + ' image' + (imgCount === 1 ? '' : 's'));
+			pdfCountEl.textContent = parts.join(', ');
 			pdfCountEl.style.display = '';
 		} else {
 			pdfCountEl.textContent = '';
@@ -59,6 +64,13 @@
 			file.type === 'application/pdf' ||
 			file.name.toLowerCase().endsWith('.pdf')
 		);
+	}
+
+	var IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+	function isImageFile(file) {
+		if (!file) return false;
+		var name = file.name.toLowerCase();
+		return IMAGE_EXTENSIONS.some(function (ext) { return name.endsWith(ext); });
 	}
 
 	function renderPdfPage1ToCanvas(file, canvas, targetWidth) {
@@ -95,7 +107,7 @@
 			return Promise.resolve();
 		}
 
-		if (!window.pdfjsLib) {
+		if (!window.pdfjsLib && window.selectedPdfs.some(isPdfFile)) {
 			showPdfError('PDF preview unavailable: PDF.js failed to load.');
 			pdfPreviewWrap.style.display = 'block';
 			return Promise.resolve();
@@ -119,9 +131,6 @@
 				var card = document.createElement('div');
 				card.className = 'pdf-preview-card';
 
-				var canvas = document.createElement('canvas');
-				canvas.className = 'pdf-preview-canvas';
-
 				var meta = document.createElement('div');
 				meta.className = 'pdf-preview-meta';
 
@@ -131,7 +140,6 @@
 
 				var info = document.createElement('div');
 				info.className = 'info';
-				info.textContent = 'Rendering\u2026';
 
 				var removeBtn = document.createElement('button');
 				removeBtn.type = 'button';
@@ -155,21 +163,47 @@
 				meta.appendChild(name);
 				meta.appendChild(info);
 
-				card.appendChild(canvas);
-				card.appendChild(meta);
-				card.appendChild(removeBtn);
+				if (isImageFile(file)) {
+					// Image preview using <img> tag
+					var thumb = document.createElement('img');
+					thumb.className = 'pdf-preview-canvas';
+					thumb.style.objectFit = 'contain';
+					thumb.alt = file.name;
 
-				pdfPreviewList.appendChild(card);
-
-				return renderPdfPage1ToCanvas(file, canvas, THUMB_WIDTH).then(function (result) {
-					totalPages += result.numPages;
+					var objUrl = URL.createObjectURL(file);
+					pdfObjectUrls.push(objUrl);
+					thumb.src = objUrl;
 
 					var kb = Math.round(file.size / 1024);
-					info.textContent = kb + ' KB \u2022 ' + result.numPages + ' pg' + (result.numPages === 1 ? '' : 's');
-				}).catch(function (err) {
-					console.error(err);
-					info.textContent = 'Preview failed';
-				});
+					info.textContent = kb + ' KB \u2022 image';
+					totalPages += 1;
+
+					card.appendChild(thumb);
+					card.appendChild(meta);
+					card.appendChild(removeBtn);
+					pdfPreviewList.appendChild(card);
+
+					return Promise.resolve();
+				} else {
+					// PDF preview using PDF.js canvas
+					var canvas = document.createElement('canvas');
+					canvas.className = 'pdf-preview-canvas';
+					info.textContent = 'Rendering\u2026';
+
+					card.appendChild(canvas);
+					card.appendChild(meta);
+					card.appendChild(removeBtn);
+					pdfPreviewList.appendChild(card);
+
+					return renderPdfPage1ToCanvas(file, canvas, THUMB_WIDTH).then(function (result) {
+						totalPages += result.numPages;
+						var kb = Math.round(file.size / 1024);
+						info.textContent = kb + ' KB \u2022 ' + result.numPages + ' pg' + (result.numPages === 1 ? '' : 's');
+					}).catch(function (err) {
+						console.error(err);
+						info.textContent = 'Preview failed';
+					});
+				}
 			});
 		});
 
@@ -179,12 +213,14 @@
 	}
 
 	function addPdfs(fileList) {
-		var newFiles = Array.from(fileList || []).filter(isPdfFile);
+		var newFiles = Array.from(fileList || []).filter(function (f) {
+			return isPdfFile(f) || isImageFile(f);
+		});
 
 		if (!fileList || fileList.length === 0) return;
 
 		if (newFiles.length === 0) {
-			showPdfError('Please select PDF file(s).');
+			showPdfError('Please select PDF or image file(s).');
 			pdfPreviewWrap.style.display = 'block';
 			return;
 		}
