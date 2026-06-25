@@ -1,6 +1,4 @@
-# AIPDFGenerator (Python — original)
-
-> **A Go rewrite of this app exists at `~/Documents/FormForge`.** FormForge has the same features, same UI, same JSON schema, and same API endpoints. If you're starting fresh or iterating, prefer FormForge. This Python version is kept as reference.
+# AIPDFGenerator
 
 Takes proprietary medical/dental office forms (PDFs or images), sends them to Claude's vision API to extract the field structure, writes a JSON schema for the PHP form builder, and generates a fillable PDF from that JSON — all from a local web UI.
 
@@ -9,17 +7,14 @@ Takes proprietary medical/dental office forms (PDFs or images), sends them to Cl
 ## Quick Start
 
 ```bash
-cd ~/Documents/AIPDFGenerator
-source env/bin/activate
-python app.py
-# Opens Chromium at http://127.0.0.1:5000
+git clone https://github.com/cam-byte/AIPDFGenerator
+cd AIPDFGenerator
+./setup.sh
 ```
 
-**Requirements:**
-- Python 3.x + virtualenv (`env/`)
-- `pdftoppm` (poppler) — `brew install poppler`
-- Chromium at `/Applications/Chromium.app/Contents/MacOS/Chromium` (for FlaskWebGUI)
-- An Anthropic API key (enter in Settings panel, saved to `settings.json`)
+`setup.sh` will install dependencies, set up the Python environment, and create **SchemaForm.app** on your Desktop. Double-click it to launch.
+
+Enter your Anthropic API key in the Settings panel on first run.
 
 ---
 
@@ -37,6 +32,15 @@ python app.py
 
 ---
 
+## Requirements
+
+- macOS with [Homebrew](https://brew.sh)
+- Python 3.x
+- Chromium at `/Applications/Chromium.app` (for the desktop launcher) — if missing, open `http://127.0.0.1:5000` manually after running `./run.sh`
+- An Anthropic API key
+
+---
+
 ## Project Structure
 
 ```
@@ -45,9 +49,11 @@ AIPDFGenerator/
 ├── custompdf.py                 # Standalone CLI for direct PDF generation
 ├── requirements.txt             # Python dependencies
 ├── settings.json                # API key/model (gitignored)
+├── setup.sh                     # One-time setup: deps, venv, Desktop app
+├── run.sh                       # Launch without the Desktop app
 ├── analyzer/
 │   ├── form_analyzer.py         # Claude API: PDF/image → JSON schema
-│   └── config.py                # API key loading from .env
+│   └── config.py                # API key loading
 ├── generator/
 │   ├── pdf_generator.py         # Main PDF rendering orchestrator
 │   ├── page_manager.py          # Business header (logo + locations) and page footer
@@ -126,7 +132,7 @@ AIPDFGenerator/
 
 ## Settings File
 
-`settings.json` in the project root (same schema in both this app and FormForge):
+`settings.json` in the project root (gitignored):
 
 ```json
 {
@@ -151,16 +157,4 @@ PDF spacing options sometimes produce fields too close or too far apart dependin
 **Fix location:** `generator/fields/` — each field renderer's spacing logic at the bottom of its `draw()` method, and `generator/constants.py` for default values.
 
 ### 3. FlaskWebGUI / Chromium dependency
-The app requires Chromium at a hardcoded path. If Chromium moves or is missing, run `app.py` with `app.run(debug=True)` instead and open `http://127.0.0.1:5000` manually.
-
----
-
-## Go Rewrite (FormForge)
-
-`~/Documents/FormForge` is a complete 1:1 port to Go:
-- Same UI, same endpoints, same JSON schema
-- From-scratch PDF 1.7 writer (no external PDF lib — avoids license issues)
-- Auto-opens system browser instead of requiring Chromium
-- Run: `cd ~/Documents/FormForge && go run ./cmd`
-
-The Go version's README has a full breakdown of every file, every struct, and every layout mechanism.
+The app requires Chromium at a hardcoded path. If Chromium moves or is missing, run `./run.sh` and open `http://127.0.0.1:5000` manually in any browser.
