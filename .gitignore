@@ -27,6 +27,7 @@ Thumbs.db
 *.pdf
 uploads/
 output/
+*.log
 
 # Claude
 .claude/

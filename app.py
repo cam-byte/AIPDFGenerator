@@ -9,6 +9,7 @@ Open: http://127.0.0.1:5000
 import os
 import io
 import json
+import logging
 import shutil
 import tempfile
 import traceback
@@ -26,8 +27,24 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB upload limit
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_PATH = os.path.join(SCRIPT_DIR, 'settings.json')
 
+# The desktop launcher (SchemaForm.app) runs this with stdout/stderr sent to
+# /dev/null, so anything printed there is unrecoverable. Log to a file too so
+# analysis failures are diagnosable after the fact.
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(SCRIPT_DIR, 'app.log')),
+        logging.StreamHandler(),
+    ],
+)
+
 DEFAULT_PROVIDER = 'anthropic'
-DEFAULT_MODEL = 'claude-sonnet-4-20250514'
+
+try:
+    from analyzer.config import MODEL_NAME as DEFAULT_MODEL
+except ImportError:
+    DEFAULT_MODEL = 'claude-sonnet-5'
 
 ALLOWED_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
 
@@ -197,7 +214,9 @@ def _detect_and_analyze(file_path, api_key, model, filename, file_type='pdf'):
         form_data = analyzer.analyze_pdf(file_path)
 
     if not form_data:
-        raise RuntimeError('Analysis returned no data')
+        reason = analyzer.last_error
+        message = f'Analysis returned no data: {reason}' if reason else 'Analysis returned no data'
+        raise RuntimeError(message)
 
     return form_details, form_data
 

@@ -3,12 +3,27 @@ import anthropic
 import base64
 import json
 import io
+import logging
 import os
 from pdf2image import convert_from_path
 from PIL import Image
 from typing import Dict, Any, Optional
 
+from .config import (
+    ANALYSIS_MAX_TOKENS,
+    ANALYSIS_THINKING,
+    DETECTION_MAX_TOKENS,
+    DETECTION_THINKING,
+)
+
+logger = logging.getLogger(__name__)
+
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+
+
+def _thinking(enabled: bool) -> Dict[str, str]:
+    """Map a config toggle to the API's thinking parameter."""
+    return {"type": "adaptive"} if enabled else {"type": "disabled"}
 
 # Quick prompt to detect form name/category from PDF
 FORM_DETECTION_PROMPT = """Look at this PDF form and tell me:
@@ -620,15 +635,16 @@ class FormAnalyzer:
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model_name
         self.inputs = inputs
+        self.last_error: Optional[str] = None
 
     def _pdf_to_images(self, pdf_path: str) -> list:
         """Convert PDF pages to base64-encoded images."""
-        print(f"   Converting PDF to images...")
+        logger.info("Converting PDF to images...")
         import shutil
         poppler_path = shutil.which('pdftoppm')
         poppler_path = os.path.dirname(poppler_path) if poppler_path else '/opt/homebrew/bin'
         images = convert_from_path(pdf_path, dpi=150, poppler_path=poppler_path)
-        print(f"   Found {len(images)} page(s)")
+        logger.info("Found %d page(s)", len(images))
 
         encoded_images = []
         for i, img in enumerate(images):
@@ -640,13 +656,13 @@ class FormAnalyzer:
             # Base64 encode
             encoded = base64.standard_b64encode(buffer.read()).decode('utf-8')
             encoded_images.append(encoded)
-            print(f"   Encoded page {i + 1}")
+            logger.info("Encoded page %d", i + 1)
 
         return encoded_images
 
     def _image_file_to_base64(self, image_path: str) -> tuple:
         """Read an image file and return (base64_data, media_type) as JPEG."""
-        print(f"   Encoding image: {os.path.basename(image_path)}")
+        logger.info("Encoding image: %s", os.path.basename(image_path))
         with open(image_path, 'rb') as f:
             raw = f.read()
 
@@ -717,8 +733,9 @@ class FormAnalyzer:
         try:
             return json.loads(text)
         except json.JSONDecodeError as e:
-            print(f"   JSON parse error: {e}")
-            print(f"   Response starts with: {response_text[:200]!r}")
+            self.last_error = f"Claude's response wasn't valid JSON ({e})"
+            logger.error("JSON parse error: %s", e)
+            logger.error("Response starts with: %r", response_text[:200])
             return None
 
     def detect_form_info(self, pdf_path: str) -> Optional[Dict[str, str]]:
@@ -728,7 +745,7 @@ class FormAnalyzer:
             dict with 'form_name' and 'category' keys, or None on failure
         """
         # Convert just first page to image for quick detection
-        print(f"   Detecting form info...")
+        logger.info("Detecting form info...")
         images = self._pdf_to_images(pdf_path)
         if not images:
             return None
@@ -752,19 +769,21 @@ class FormAnalyzer:
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=256,
+                max_tokens=DETECTION_MAX_TOKENS,
+                thinking=_thinking(DETECTION_THINKING),
+                output_config={"effort": "low"},
                 messages=[{
                     "role": "user",
                     "content": content
                 }]
             )
 
-            response_text = response.content[0].text.strip()
+            response_text = next((b.text for b in response.content if b.type == "text"), "").strip()
 
             # Parse JSON response
             if response_text.startswith('{'):
                 result = json.loads(response_text)
-                print(f"   Detected: {result.get('form_name', 'Unknown')}")
+                logger.info("Detected: %s", result.get('form_name', 'Unknown'))
                 return result
 
             # Try to extract JSON from response
@@ -772,17 +791,17 @@ class FormAnalyzer:
                 start = response_text.find('{')
                 end = response_text.rfind('}') + 1
                 result = json.loads(response_text[start:end])
-                print(f"   Detected: {result.get('form_name', 'Unknown')}")
+                logger.info("Detected: %s", result.get('form_name', 'Unknown'))
                 return result
 
         except (json.JSONDecodeError, anthropic.APIError) as e:
-            print(f"   Detection failed: {e}")
+            logger.warning("Detection failed: %s", e)
 
         return None
 
     def detect_form_info_from_image(self, image_path: str) -> Optional[Dict[str, str]]:
         """Quick detection of form name and category from an image file."""
-        print(f"   Detecting form info from image...")
+        logger.info("Detecting form info from image...")
         img_data, media_type = self._image_file_to_base64(image_path)
 
         content = [
@@ -796,27 +815,61 @@ class FormAnalyzer:
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=256,
+                max_tokens=DETECTION_MAX_TOKENS,
+                thinking=_thinking(DETECTION_THINKING),
+                output_config={"effort": "low"},
                 messages=[{"role": "user", "content": content}]
             )
-            response_text = response.content[0].text.strip()
+            response_text = next((b.text for b in response.content if b.type == "text"), "").strip()
 
             if response_text.startswith('{'):
                 result = json.loads(response_text)
-                print(f"   Detected: {result.get('form_name', 'Unknown')}")
+                logger.info("Detected: %s", result.get('form_name', 'Unknown'))
                 return result
 
             if '{' in response_text:
                 start = response_text.find('{')
                 end = response_text.rfind('}') + 1
                 result = json.loads(response_text[start:end])
-                print(f"   Detected: {result.get('form_name', 'Unknown')}")
+                logger.info("Detected: %s", result.get('form_name', 'Unknown'))
                 return result
 
         except (json.JSONDecodeError, anthropic.APIError) as e:
-            print(f"   Detection failed: {e}")
+            logger.warning("Detection failed: %s", e)
 
         return None
+
+    def _run_analysis(self, content: list) -> Optional[Dict[str, Any]]:
+        """Send form content to Claude and parse the JSON structure it returns."""
+        try:
+            with self.client.messages.stream(
+                model=self.model,
+                max_tokens=ANALYSIS_MAX_TOKENS,
+                thinking=_thinking(ANALYSIS_THINKING),
+                messages=[{"role": "user", "content": content}]
+            ) as stream:
+                response = stream.get_final_message()
+
+            response_text = next((b.text for b in response.content if b.type == "text"), "")
+            logger.info("Received response (%d chars)", len(response_text))
+
+            truncated = response.stop_reason == 'max_tokens'
+            if truncated:
+                logger.warning("Response was truncated (hit max_tokens limit)")
+
+            result = self._extract_json(response_text)
+            if result is None and truncated:
+                self.last_error = (
+                    f"Claude's response was cut off before it finished (hit the "
+                    f"{ANALYSIS_MAX_TOKENS:,}-token output limit) — try running this form "
+                    "in smaller chunks, a few pages at a time"
+                )
+            return result
+
+        except anthropic.APIError as e:
+            self.last_error = f"Claude API error: {e}"
+            logger.error("API Error: %s", e)
+            return None
 
     def analyze_image(self, image_path: str) -> Optional[Dict[str, Any]]:
         """Analyze a form image using Claude's vision capabilities."""
@@ -830,25 +883,9 @@ class FormAnalyzer:
             {"type": "text", "text": self._build_prompt()}
         ]
 
-        print(f"   Sending image to Claude ({self.model})...")
+        logger.info("Sending image to Claude (%s)...", self.model)
 
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=16384,
-                messages=[{"role": "user", "content": content}]
-            )
-            response_text = response.content[0].text
-            print(f"   Received response ({len(response_text)} chars)")
-
-            if response.stop_reason == 'max_tokens':
-                print("   WARNING: Response was truncated (hit max_tokens limit)")
-
-            return self._extract_json(response_text)
-
-        except anthropic.APIError as e:
-            print(f"   API Error: {e}")
-            return None
+        return self._run_analysis(content)
 
     def analyze_pdf(self, pdf_path: str) -> Optional[Dict[str, Any]]:
         """Analyze a PDF form using Claude's vision capabilities."""
@@ -875,29 +912,6 @@ class FormAnalyzer:
             "text": self._build_prompt()
         })
 
-        print(f"   Sending to Claude ({self.model})...")
+        logger.info("Sending to Claude (%s)...", self.model)
 
-        # Call Claude API
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=16384,
-                messages=[{
-                    "role": "user",
-                    "content": content
-                }]
-            )
-
-            # Extract response text
-            response_text = response.content[0].text
-            print(f"   Received response ({len(response_text)} chars)")
-
-            if response.stop_reason == 'max_tokens':
-                print("   WARNING: Response was truncated (hit max_tokens limit)")
-
-            # Parse JSON from response
-            return self._extract_json(response_text)
-
-        except anthropic.APIError as e:
-            print(f"   API Error: {e}")
-            return None
+        return self._run_analysis(content)
