@@ -711,10 +711,12 @@ class FormAnalyzer:
         form_name = self.inputs.get('form_name', 'Untitled Form')
         category = self.inputs.get('category', 'General')
 
-        # Create snake_case key from form name
-        form_name_key = form_name.lower().replace(' ', '_').replace('-', '_')
-        # Remove any non-alphanumeric characters except underscore
-        form_name_key = ''.join(c for c in form_name_key if c.isalnum() or c == '_')
+        # A user-supplied key wins; otherwise derive snake_case from the form name
+        form_name_key = self.inputs.get('form_key', '')
+        if not form_name_key:
+            form_name_key = form_name.lower().replace(' ', '_').replace('-', '_')
+            # Remove any non-alphanumeric characters except underscore
+            form_name_key = ''.join(c for c in form_name_key if c.isalnum() or c == '_')
 
         return FORM_ANALYSIS_PROMPT.format(
             form_name=form_name,

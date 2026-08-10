@@ -63,8 +63,11 @@
 				showResult(false, 'Please upload at least one PDF or image.');
 				return;
 			}
+			// One form_key per file, appended in the same order so the
+			// server can pair them up by position
 			for (var i = 0; i < window.selectedPdfs.length; i++) {
 				fd.append('pdf', window.selectedPdfs[i]);
+				fd.append('form_key', (window.selectedPdfs[i]._formKey || '').trim());
 			}
 		}
 

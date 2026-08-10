@@ -601,6 +601,31 @@ select {
 	color: #666;
 }
 
+/* Optional per-file form key */
+input.pdf-form-key {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	margin-top: 6px;
+	padding: 3px 7px;
+	font-size: 0.72rem;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	color: #e0e0e0;
+	background: #1a1a1a;
+	border: 1px solid #333;
+	border-radius: 4px;
+}
+
+input.pdf-form-key::placeholder {
+	color: #555;
+	font-style: italic;
+}
+
+input.pdf-form-key:focus {
+	outline: none;
+	border-color: #6366f1;
+}
+
 /* Inline remove button */
 .btn-remove-pdf {
 	width: 24px;

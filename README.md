@@ -30,6 +30,20 @@ Enter your Anthropic API key in the Settings panel on first run.
 
 **Regenerate mode:** Upload a JSON you've already tweaked → skip the AI step → fresh PDF.
 
+### Form keys
+
+`<form_key>` is the identifier for a form: it names all three output files, the JSON's top-level key and `pdf` path, and the autofill tag written into the HTML:
+
+```
+{{!/autofills/forms/form_fields/<form_key>->content-><form_key>}}
+```
+
+By default it's derived from the form title Claude detects. To set it yourself, type into the **Form key** box on that file's upload card — each file has its own, so a batch can have a mix of custom and auto-detected keys. Leave it blank to keep the detected name.
+
+Custom keys are normalized to lowercase ASCII letters, digits and underscores (`New-Patient Form` → `new_patient_form`), capped at 60 characters. A custom key sets the machine-readable identifier only — the human-readable title printed on the form still comes from detection.
+
+With **separate locations** enabled, the city is appended per location: `<form_key>_<city>`.
+
 ---
 
 ## Requirements

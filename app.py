@@ -156,20 +156,39 @@ def _write_html(output_path, form_key):
 # Process-PDF helpers
 # ---------------------------------------------------------------------------
 
+def _sanitize_form_key(raw):
+    """Normalize a form key to lowercase alphanumerics and underscores.
+
+    Also makes user input safe to use as a filename. Returns '' when nothing
+    usable remains, in which case the caller falls back to the detected name.
+    """
+    if not raw:
+        return ''
+    key = raw.strip().lower().replace(' ', '_').replace('-', '_')
+    # ASCII only — the key becomes a filename and a CMS autofill tag
+    key = ''.join(c for c in key if (c.isalnum() and c.isascii()) or c == '_')
+    return key.strip('_')[:60]
+
+
 def _validate_uploads(req, tmpdir):
     """Validate and save uploaded files. Returns (upload_paths, logo_path).
 
-    upload_paths is a list of (file_path, file_type) tuples where
-    file_type is 'pdf' or 'image'.
+    upload_paths is a list of (file_path, file_type, form_key) tuples where
+    file_type is 'pdf' or 'image' and form_key is the user's override ('' if none).
     """
-    pdf_files = req.files.getlist('pdf')
-    pdf_files = [f for f in pdf_files if f and f.filename]
+    raw_files = req.files.getlist('pdf')
+    raw_keys = req.form.getlist('form_key')
 
-    if not pdf_files:
+    # Pair by position before filtering, so each key stays with its own file
+    paired = [(f, raw_keys[i] if i < len(raw_keys) else '')
+              for i, f in enumerate(raw_files)]
+    paired = [(f, k) for f, k in paired if f and f.filename]
+
+    if not paired:
         raise ValueError('No file uploaded')
 
     upload_paths = []
-    for pdf_file in pdf_files:
+    for pdf_file, raw_key in paired:
         ext = os.path.splitext(pdf_file.filename)[1].lower()
         if ext == '.pdf':
             file_type = 'pdf'
@@ -179,7 +198,7 @@ def _validate_uploads(req, tmpdir):
             raise ValueError(f'Unsupported file type: {pdf_file.filename}. Accepted: PDF, PNG, JPEG, WEBP, GIF')
         file_path = os.path.join(tmpdir, pdf_file.filename)
         pdf_file.save(file_path)
-        upload_paths.append((file_path, file_type))
+        upload_paths.append((file_path, file_type, _sanitize_form_key(raw_key)))
 
     logo_path = None
     logo_file = req.files.get('logo')
@@ -221,8 +240,12 @@ def _build_business_info(req, logo_path):
     }
 
 
-def _detect_and_analyze(file_path, api_key, model, filename, file_type='pdf'):
-    """Auto-detect form info and analyze a PDF or image. Returns (form_details, form_data)."""
+def _detect_and_analyze(file_path, api_key, model, filename, file_type='pdf', form_key=''):
+    """Auto-detect form info and analyze a PDF or image. Returns (form_details, form_data).
+
+    form_key, when supplied, overrides the key derived from the detected name. The
+    detected name still supplies the human-readable title on the form itself.
+    """
     analyzer = FormAnalyzer(api_key, model, {})
 
     if file_type == 'image':
@@ -236,6 +259,9 @@ def _detect_and_analyze(file_path, api_key, model, filename, file_type='pdf'):
             'form_name': base_name.replace('_', ' ').replace('-', ' ').title(),
             'category': 'General',
         }
+
+    if form_key:
+        form_details['form_key'] = form_key
 
     analyzer = FormAnalyzer(api_key, model, form_details)
 
@@ -320,15 +346,13 @@ def process_pdf():
         separate = business_info.get('separate_locations', False)
         locations = business_info.get('locations', [])
 
-        for file_path, file_type in upload_paths:
+        for file_path, file_type, custom_key in upload_paths:
             filename = os.path.basename(file_path)
             form_details, form_data = _detect_and_analyze(
-                file_path, api_key, model, filename, file_type
+                file_path, api_key, model, filename, file_type, custom_key
             )
 
-            form_name = form_details['form_name']
-            form_key = form_name.lower().replace(' ', '_').replace('-', '_')
-            form_key = ''.join(c for c in form_key if c.isalnum() or c == '_')
+            form_key = custom_key or _sanitize_form_key(form_details['form_name']) or 'form'
 
             if separate and len(locations) >= 2:
                 # Generate a separate set of files per location

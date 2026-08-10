@@ -160,8 +160,21 @@
 					buildPdfPreviewCards();
 				});
 
+				// Optional per-file form key; blank falls back to the detected name
+				var keyInput = document.createElement('input');
+				keyInput.type = 'text';
+				keyInput.className = 'pdf-form-key';
+				keyInput.placeholder = 'Form key: auto-detect';
+				keyInput.spellcheck = false;
+				keyInput.value = file._formKey || '';
+				keyInput.title = 'Names the .json, .html and .pdf files and the autofill tag. Leave blank to use the detected form name.';
+				keyInput.addEventListener('input', function () {
+					file._formKey = keyInput.value;
+				});
+
 				meta.appendChild(name);
 				meta.appendChild(info);
+				meta.appendChild(keyInput);
 
 				if (isImageFile(file)) {
 					// Image preview using <img> tag
