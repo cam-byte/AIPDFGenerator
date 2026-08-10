@@ -1,0 +1,5 @@
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-...",
+  "model": "claude-sonnet-5"
+}

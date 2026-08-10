@@ -49,11 +49,12 @@ AIPDFGenerator/
 ├── custompdf.py                 # Standalone CLI for direct PDF generation
 ├── requirements.txt             # Python dependencies
 ├── settings.json                # API key/model (gitignored)
+├── settings.example.json        # Template for settings.json
 ├── setup.sh                     # One-time setup: deps, venv, Desktop app
 ├── run.sh                       # Launch without the Desktop app
 ├── analyzer/
 │   ├── form_analyzer.py         # Claude API: PDF/image → JSON schema
-│   └── config.py                # API key loading
+│   └── config.py                # API key, model, token budgets, thinking toggles
 ├── generator/
 │   ├── pdf_generator.py         # Main PDF rendering orchestrator
 │   ├── page_manager.py          # Business header (logo + locations) and page footer
@@ -132,15 +133,48 @@ AIPDFGenerator/
 
 ## Settings File
 
-`settings.json` in the project root (gitignored):
+`settings.json` in the project root (gitignored). Copy `settings.example.json` to get started, or just save once from the Settings panel — the app writes the file for you:
+
+```bash
+cp settings.example.json settings.json
+```
 
 ```json
 {
   "provider": "anthropic",
   "api_key": "sk-ant-...",
-  "model": "claude-sonnet-4-20250514"
+  "model": "claude-sonnet-5"
 }
 ```
+
+**These three keys override `analyzer/config.py`.** If `settings.json` exists, `load_settings()` returns it as-is and `ANTHROPIC_API_KEY` / `MODEL_NAME` from `.env` and config are never read. Everything else — output token budgets and thinking toggles — lives only in `analyzer/config.py`:
+
+| Setting | Purpose |
+|---|---|
+| `MODEL_NAME` | Model used when `settings.json` is absent |
+| `ANALYSIS_MAX_TOKENS` | Output budget for form → JSON analysis (streamed) |
+| `ANALYSIS_THINKING` | Extended thinking on/off for analysis |
+| `DETECTION_MAX_TOKENS` | Output budget for form name/category detection |
+| `DETECTION_THINKING` | Extended thinking on/off for detection |
+
+---
+
+## Troubleshooting
+
+Analysis errors surface in the UI as `Analysis returned no data: <reason>`. The reasons map to specific causes:
+
+| Message | Cause | Fix |
+|---|---|---|
+| `The model '<x>' isn't available — it may be retired or misspelled` | The model in Settings no longer exists. Anthropic retires older models on a published schedule — `claude-sonnet-4-20250514` was retired 2026-06-15. | Set a current model in Settings (`claude-sonnet-5`), or clear the field to fall back to `MODEL_NAME` |
+| `Your Anthropic API key was rejected` | Bad, revoked, or empty key | Update it in Settings |
+| `Your API key doesn't have access to '<x>'` | Key is valid but the account can't use that model | Different model, or a key with access |
+| `The API rejected the request for '<x>': <detail>` | A request parameter isn't supported by that model | Read the detail — it names the parameter |
+| `Rate limited by the Anthropic API` | Too many requests | Wait, then retry |
+| `Claude's response was cut off ... (hit the N-token output limit)` | Form JSON exceeded `ANALYSIS_MAX_TOKENS` | Run fewer pages per batch, or raise the budget in `analyzer/config.py` |
+
+**Models are validated when you save Settings.** A retired or misspelled model is rejected immediately with a message in the Settings panel, rather than failing later mid-run. The save also checks the model's output ceiling against `ANALYSIS_MAX_TOKENS` and refuses combinations that would fail — e.g. `claude-haiku-4-5` caps output at 64,000 tokens.
+
+**Detection failures are non-fatal.** If form name/category detection fails, the app falls back to the filename and continues; the underlying reason is written to `app.log`.
 
 ---
 

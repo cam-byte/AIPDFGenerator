@@ -90,6 +90,37 @@ def save_settings(data):
         json.dump(data, f, indent=2)
 
 
+def validate_model(api_key, model):
+    """Check a model is usable before saving it. Returns an error string, or None.
+
+    Network problems return None — a flaky connection shouldn't block saving.
+    """
+    if not api_key or not model:
+        return None
+
+    import anthropic
+    from analyzer.config import ANALYSIS_MAX_TOKENS
+
+    try:
+        info = anthropic.Anthropic(api_key=api_key).models.retrieve(model)
+    except anthropic.NotFoundError:
+        return (f"Model '{model}' isn't available — it may be retired or misspelled. "
+                "Try claude-sonnet-5.")
+    except anthropic.AuthenticationError:
+        return "That API key was rejected by Anthropic."
+    except anthropic.PermissionDeniedError:
+        return f"This API key doesn't have access to '{model}'."
+    except Exception:
+        return None
+
+    cap = getattr(info, 'max_tokens', None)
+    if cap and ANALYSIS_MAX_TOKENS > cap:
+        return (f"'{model}' caps output at {cap:,} tokens, but ANALYSIS_MAX_TOKENS in "
+                f"analyzer/config.py is {ANALYSIS_MAX_TOKENS:,}. Lower it or pick another model.")
+
+    return None
+
+
 def mask_key(key):
     """Mask an API key for display: first 6 + ... + last 4."""
     if not key or len(key) <= 12:
@@ -254,6 +285,10 @@ def post_settings():
     # If the key field is empty or still the masked version, keep the old key
     if not api_key or '...' in api_key:
         api_key = current['api_key']
+
+    invalid = validate_model(api_key, model)
+    if invalid:
+        return jsonify({'error': invalid}), 400
 
     save_settings({
         'provider': provider,

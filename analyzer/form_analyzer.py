@@ -25,6 +25,37 @@ def _thinking(enabled: bool) -> Dict[str, str]:
     """Map a config toggle to the API's thinking parameter."""
     return {"type": "adaptive"} if enabled else {"type": "disabled"}
 
+
+def _api_message(exc: Exception) -> str:
+    """Pull the API's own message out of an error response."""
+    body = getattr(exc, 'body', None)
+    if isinstance(body, dict):
+        inner = body.get('error')
+        if isinstance(inner, dict) and inner.get('message'):
+            return inner['message']
+    return getattr(exc, 'message', str(exc))
+
+
+def _friendly_error(exc: Exception, model: str) -> str:
+    """Turn an SDK exception into something the user can act on."""
+    if isinstance(exc, anthropic.NotFoundError):
+        return (f"The model '{model}' isn't available — it may be retired or misspelled. "
+                "Open Settings and choose a current model (e.g. claude-sonnet-5).")
+    if isinstance(exc, anthropic.AuthenticationError):
+        return "Your Anthropic API key was rejected. Open Settings and check the key."
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return (f"Your API key doesn't have access to '{model}'. "
+                "Try a different model, or a key from an account that has access.")
+    if isinstance(exc, anthropic.RateLimitError):
+        return "Rate limited by the Anthropic API. Wait a moment and try again."
+    if isinstance(exc, anthropic.BadRequestError):
+        return f"The API rejected the request for '{model}': {_api_message(exc)}"
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "Couldn't reach the Anthropic API. Check your internet connection."
+    if isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500:
+        return "The Anthropic API is temporarily unavailable. Try again shortly."
+    return f"Claude API error: {exc}"
+
 # Quick prompt to detect form name/category from PDF
 FORM_DETECTION_PROMPT = """Look at this PDF form and tell me:
 1. What is the form's title/name? Keep it SHORT — 2 to 5 words max (e.g., "Patient Registration", "Medical History", "HIPAA Authorization", "Treatment Consent"). Do NOT use long verbose titles. Shorten and simplify.
@@ -771,7 +802,6 @@ class FormAnalyzer:
                 model=self.model,
                 max_tokens=DETECTION_MAX_TOKENS,
                 thinking=_thinking(DETECTION_THINKING),
-                output_config={"effort": "low"},
                 messages=[{
                     "role": "user",
                     "content": content
@@ -794,8 +824,11 @@ class FormAnalyzer:
                 logger.info("Detected: %s", result.get('form_name', 'Unknown'))
                 return result
 
-        except (json.JSONDecodeError, anthropic.APIError) as e:
-            logger.warning("Detection failed: %s", e)
+        except anthropic.APIError as e:
+            self.last_error = _friendly_error(e, self.model)
+            logger.warning("Detection failed on %s: %s", self.model, e)
+        except json.JSONDecodeError as e:
+            logger.warning("Detection returned invalid JSON: %s", e)
 
         return None
 
@@ -817,7 +850,6 @@ class FormAnalyzer:
                 model=self.model,
                 max_tokens=DETECTION_MAX_TOKENS,
                 thinking=_thinking(DETECTION_THINKING),
-                output_config={"effort": "low"},
                 messages=[{"role": "user", "content": content}]
             )
             response_text = next((b.text for b in response.content if b.type == "text"), "").strip()
@@ -834,8 +866,11 @@ class FormAnalyzer:
                 logger.info("Detected: %s", result.get('form_name', 'Unknown'))
                 return result
 
-        except (json.JSONDecodeError, anthropic.APIError) as e:
-            logger.warning("Detection failed: %s", e)
+        except anthropic.APIError as e:
+            self.last_error = _friendly_error(e, self.model)
+            logger.warning("Detection failed on %s: %s", self.model, e)
+        except json.JSONDecodeError as e:
+            logger.warning("Detection returned invalid JSON: %s", e)
 
         return None
 
@@ -867,8 +902,8 @@ class FormAnalyzer:
             return result
 
         except anthropic.APIError as e:
-            self.last_error = f"Claude API error: {e}"
-            logger.error("API Error: %s", e)
+            self.last_error = _friendly_error(e, self.model)
+            logger.error("API error on %s: %s", self.model, e)
             return None
 
     def analyze_image(self, image_path: str) -> Optional[Dict[str, Any]]:
